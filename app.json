@@ -1,0 +1,5 @@
+{
+  "//": "The declared app name must follow this pattern to be KRL-compatible - it must match [[components.interactive]].id in manifest.toml",
+  "name": "com.vegafin.app.main",
+  "displayName": "VegaFin"
+}

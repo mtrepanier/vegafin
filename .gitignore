@@ -1,0 +1,10 @@
+node_modules/
+build/
+generated/
+buildinfo.json
+*.vpkg
+.metro-cache/
+*.log
+.DS_Store
+.vscode/
+.idea/

@@ -1,0 +1,102 @@
+#
+# Vega app manifest for VegaFin.
+#
+# The [needs.module] list below is not hand-written: `npm run build:debug` autolinks it
+# from package.json dependencies and rewrites this file in place (confirmed by actually
+# running the build against Vega SDK 0.24.9914 - one real .vpkg produced per architecture).
+# After adding/removing a dependency that ships a Vega native module, rebuild once to let
+# autolinking refresh this section rather than editing it by hand.
+#
+# Add [[wants.service]] entries as Phase 1+ starts using capabilities that aren't plain npm
+# dependencies (e.g. com.amazon.media.server for playback); none are needed yet.
+#
+schema-version = 1
+
+[package]
+id = "com.vegafin.app"
+title = "VegaFin"
+version = "0.0.1"
+
+[os.version]
+min = "1.2"
+target = "1.2"
+
+[needs]
+[[needs.module]]
+id = "/com.amazon.vega.os@IVega_1_2"
+
+# Not autolinked (not tied to an npm dependency) - added after seeing this warning in the
+# virtual device's log stream during a real run: "Package: 'com.wholphin.vega' is granted
+# access ... because the URI is in temporary enforcement exception list. Package should add
+# wants/needs module entry to its manifest file to avoid future access control failure."
+# (That log line predates the rename to com.vegafin.app; the underlying warning still applies.)
+# Required for talking to a Jellyfin server at all.
+[[needs.module]]
+id = "/com.amazon.kepler.net.net_manager@INetManager"
+
+[[needs.module]]
+id = "/com.amazon.kepler.kepler_file_system_0@IKeplerFileSystem_0"
+
+[[needs.module]]
+id = "/com.amazon.kepler.kepler_graphics_2@IKeplerGraphics_1"
+
+[[needs.module]]
+id = "/com.amazon.kepler.kepler_media_controls_1@IKeplerMediaControls_0"
+
+[[needs.module]]
+id = "/com.amazon.kepler.keplermediadescriptor_1@IKeplermediadescriptor_1"
+
+[[needs.module]]
+id = "/com.amazon.kepler.async_storage__async_storage_2@IAsyncStorage__AsyncStorage_1"
+
+[[needs.module]]
+id = "/com.amazon.kepler.gesture_handler_4@IGestureHandler_0"
+
+[[needs.module]]
+id = "/com.amazon.kepler.keplerscript_4@IKeplerScript_0"
+
+[[needs.module]]
+id = "/com.amazon.kepler.reanimated_4@IReanimated_0"
+
+[[needs.module]]
+id = "/com.amazon.kepler.safe_area_context_8@ISafeAreaContext_0"
+
+[[needs.module]]
+id = "/com.amazon.kepler.screens_3@IScreens_0"
+
+[[needs.module]]
+id = "/com.amazon.kepler.svg_3@ISVG_0"
+
+[[needs.module]]
+id = "/com.amazon.kepler.vector_icons_2@IVectorIcons_1"
+
+[[needs.module]]
+id = "/com.amazon.kepler.w3cmedia_2@IW3cmedia_3"
+
+[[needs.module]]
+id = "/com.amazon.kepler.worklets_1@IWorklets_0"
+
+[[needs.module]]
+id = "/com.amazon.kepler.navigation__core_8@INavigation__Core_0"
+
+[[needs.module]]
+id = "/com.amazon.kepler.navigation__drawer_8@INavigation__Drawer_0"
+
+[[needs.module]]
+id = "/com.amazon.kepler.navigation__elements_8@INavigation__Elements_0"
+
+[[needs.module]]
+id = "/com.amazon.kepler.navigation__native_8@INavigation__Native_0"
+
+[[needs.module]]
+id = "/com.amazon.kepler.navigation__native_stack_8@INavigation__NativeStack_0"
+
+[[needs.module]]
+id = "/com.amazon.kepler.navigation__routers_8@INavigation__Routers_0"
+
+[components]
+[[components.interactive]]
+id = "com.vegafin.app.main"
+runtime-module = "/com.amazon.kepler.runtime.react_native_kepler_4@IReactNativeKepler_0"
+launch-type = "singleton"
+categories = ["com.amazon.category.main"]
