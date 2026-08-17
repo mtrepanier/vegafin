@@ -1,6 +1,5 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
-import FastImage from '@amazon-devices/react-native-fast-image';
+import { Image, StyleSheet, View } from 'react-native';
 import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
 import { useTheme } from '../../theme/ThemeContext';
 
@@ -32,7 +31,7 @@ export function CardImage({ uri, width, height, progressPercent, watched, favori
       ]}
     >
       {uri ? (
-        <FastImage source={{ uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+        <Image source={{ uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
       ) : null}
 
       {watched ? (

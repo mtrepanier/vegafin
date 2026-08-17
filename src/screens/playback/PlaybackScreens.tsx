@@ -44,6 +44,7 @@ function PlaybackBody({ itemId, initialPositionMs, forceTranscoding, onEnded, on
   const [player, setPlayer] = useState<VideoPlayer | null>(null);
   const [source, setSource] = useState<PlaybackSource | null>(null);
   const [error, setError] = useState(false);
+  const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [selection, setSelection] = useState<{ audioStreamIndex?: number; subtitleStreamIndex?: number }>({});
 
@@ -142,7 +143,13 @@ function PlaybackBody({ itemId, initialPositionMs, forceTranscoding, onEnded, on
       reportProgress();
     };
     const onEndedEvent = () => onEnded();
-    const onError = () => setError(true);
+    const onError = () => {
+      const mediaError = activePlayer.error;
+      const detail = mediaError ? `(${mediaError.code}) ${mediaError.message}` : null;
+      console.error('[VegaFin] playback error', detail, 'src:', sourceRef.current?.url);
+      setErrorDetail(detail);
+      setError(true);
+    };
 
     activePlayer.addEventListener('timeupdate', onTimeUpdate);
     activePlayer.addEventListener('play', onPlay);
@@ -227,6 +234,9 @@ function PlaybackBody({ itemId, initialPositionMs, forceTranscoding, onEnded, on
       {error ? (
         <View style={styles.loading}>
           <Text style={{ color: colors.onBackground }}>Playback failed.</Text>
+          {errorDetail ? (
+            <Text style={{ color: colors.onSurfaceVariant, marginTop: 4, fontSize: 12 }}>{errorDetail}</Text>
+          ) : null}
           <Pressable onPress={onExit} style={{ marginTop: 12 }}>
             <Text style={{ color: colors.primary }}>Back</Text>
           </Pressable>

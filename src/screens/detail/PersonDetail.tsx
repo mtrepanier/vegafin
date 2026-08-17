@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
-import FastImage from '@amazon-devices/react-native-fast-image';
+import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BaseItemKind } from '@jellyfin/sdk/lib/generated-client/models/base-item-kind';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import { useTheme } from '../../theme/ThemeContext';
@@ -85,7 +84,7 @@ export function PersonDetail({ itemId, navigation }: Props) {
     <ScrollView style={{ backgroundColor: colors.background }}>
       <View style={styles.header}>
         <View style={[styles.photo, { backgroundColor: colors.surfaceVariant }]}>
-          {photoUri ? <FastImage source={{ uri: photoUri }} style={StyleSheet.absoluteFill} resizeMode="cover" /> : null}
+          {photoUri ? <Image source={{ uri: photoUri }} style={StyleSheet.absoluteFill} resizeMode="cover" /> : null}
         </View>
         <View style={styles.headerText}>
           <Text style={[styles.name, { color: colors.onBackground }]}>{person.Name}</Text>
