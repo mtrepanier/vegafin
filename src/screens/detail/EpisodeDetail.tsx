@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
-import FastImage from '@amazon-devices/react-native-fast-image';
+import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { PersonKind } from '@jellyfin/sdk/lib/generated-client/models/person-kind';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import { useTheme } from '../../theme/ThemeContext';
@@ -78,7 +77,7 @@ export function EpisodeDetail({ itemId, navigation }: Props) {
     <ScrollView style={{ backgroundColor: colors.background }}>
       {backdropUri ? (
         <View style={styles.backdrop}>
-          <FastImage source={{ uri: backdropUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+          <Image source={{ uri: backdropUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
           <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.background, opacity: 0.45 }]} />
         </View>
       ) : null}

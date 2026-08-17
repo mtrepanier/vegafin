@@ -117,12 +117,17 @@ export async function negotiatePlayback(
   const mediaStreams = source.MediaStreams ?? [];
 
   if (source.SupportsDirectPlay && source.Path) {
-    const url = api.getUri(`/Videos/${itemId}/stream`, {
+    // Kepler's native media pipeline determines the container from the URL's file extension
+    // rather than sniffing content or trusting the `container` query param, so the extensionless
+    // `/stream` route (which works fine on players like ExoPlayer/AVPlayer) fails there with
+    // MEDIA_ERR_SRC_NOT_SUPPORTED. `/stream.{container}` is the server's own documented route for
+    // exactly this case.
+    const container = source.Container ?? 'mp4';
+    const url = api.getUri(`/Videos/${itemId}/stream.${container}`, {
       static: true,
       mediaSourceId: source.Id,
       playSessionId,
       api_key: api.accessToken,
-      container: source.Container ?? undefined,
     });
     return { url, playMethod: PlayMethod.DirectPlay, mediaSourceId: source.Id, playSessionId, mediaStreams };
   }
