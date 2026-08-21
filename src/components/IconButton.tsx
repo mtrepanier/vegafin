@@ -16,20 +16,10 @@ export function IconButton({ icon, active, onPress, hasTVPreferredFocus }: Props
   const { colors } = useTheme();
   return (
     <Pressable hasTVPreferredFocus={hasTVPreferredFocus} onPress={onPress}>
-      {({ focused }: PressableStateCallbackType) => (
-        <Icon
-          name={icon}
-          size={22}
-          color={active ? colors.primary : colors.onSurfaceVariant}
-          style={[
-            styles.button,
-            {
-              borderColor: focused ? colors.border : 'transparent',
-              backgroundColor: colors.surfaceVariant,
-            },
-          ]}
-        />
-      )}
+      {({ focused }: PressableStateCallbackType) => {
+        const iconStyle = [styles.button, { borderColor: focused ? colors.border : 'transparent', backgroundColor: colors.surfaceVariant }];
+        return <Icon name={icon} size={22} color={active ? colors.primary : colors.onSurfaceVariant} style={iconStyle} />;
+      }}
     </Pressable>
   );
 }

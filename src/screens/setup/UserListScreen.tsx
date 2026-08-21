@@ -149,7 +149,7 @@ function QuickConnectPanel({
       ) : code ? (
         <>
           <Text style={[styles.quickConnectCode, { color: colors.onSurface }]}>{code}</Text>
-          <Text style={{ color: colors.onSurfaceVariant, textAlign: 'center' }}>
+          <Text style={[styles.quickConnectHelp, { color: colors.onSurfaceVariant }]}>
             On your phone or computer, open Jellyfin, go to Quick Connect, and enter this code.
           </Text>
         </>
@@ -214,6 +214,8 @@ export function UserListScreen() {
     }
   };
 
+  const quickConnectButtonStyle = [styles.button, { borderWidth: 1, borderColor: colors.primary }];
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Text style={[styles.title, { color: colors.onBackground }]}>
@@ -224,6 +226,11 @@ export function UserListScreen() {
         horizontal
         data={publicUsers}
         keyExtractor={(u) => u.Id ?? u.Name ?? ''}
+        initialNumToRender={8}
+        windowSize={5}
+        maxToRenderPerBatch={8}
+        updateCellsBatchingPeriod={50}
+        removeClippedSubviews
         renderItem={({ item }) => (
           <Pressable
             onPress={() => setUsername(item.Name ?? '')}
@@ -269,13 +276,7 @@ export function UserListScreen() {
           }}
         />
       ) : (
-        <Pressable
-          onPress={() => {
-            setError(null);
-            setQuickConnecting(true);
-          }}
-          style={[styles.button, { borderWidth: 1, borderColor: colors.primary }]}
-        >
+        <Pressable onPress={() => { setError(null); setQuickConnecting(true); }} style={quickConnectButtonStyle}>
           <Text style={{ color: colors.primary }}>Sign in with a code</Text>
         </Pressable>
       )}
@@ -292,4 +293,5 @@ const styles = StyleSheet.create({
   quickConnect: { borderWidth: 1, borderRadius: 8, padding: 20, alignItems: 'center', gap: 12 },
   quickConnectCode: { fontSize: 40, fontWeight: '700', letterSpacing: 8 },
   quickConnectCancel: { marginTop: 4 },
+  quickConnectHelp: { textAlign: 'center' },
 });

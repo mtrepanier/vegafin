@@ -73,12 +73,13 @@ export function EpisodeDetail({ itemId, navigation }: Props) {
     await setWatched(userId, itemId, watched);
   };
 
+  const scrimStyle = [StyleSheet.absoluteFill, { backgroundColor: colors.background, opacity: 0.45 }];
   return (
     <ScrollView style={{ backgroundColor: colors.background }}>
       {backdropUri ? (
         <View style={styles.backdrop}>
           <Image source={{ uri: backdropUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.background, opacity: 0.45 }]} />
+          <View style={scrimStyle} />
         </View>
       ) : null}
 

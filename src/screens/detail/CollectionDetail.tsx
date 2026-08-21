@@ -59,12 +59,15 @@ export function CollectionDetail({ itemId, navigation }: Props) {
       {item.Overview ? <Text style={[styles.overview, { color: colors.onSurface }]}>{item.Overview}</Text> : null}
       <View style={styles.actions}>
         <Pressable onPress={() => navigation.navigate('PlaybackList', { itemId, recursive: true })} hasTVPreferredFocus>
-          {({ focused }: PressableStateCallbackType) => (
-            <View style={[styles.primaryButton, { backgroundColor: colors.primary, borderColor: focused ? colors.border : 'transparent' }]}>
-              <Icon name="play-arrow" size={22} color={colors.onPrimary} />
-              <Text style={[styles.primaryLabel, { color: colors.onPrimary }]}>Play All</Text>
-            </View>
-          )}
+          {({ focused }: PressableStateCallbackType) => {
+            const primaryButtonStyle = [styles.primaryButton, { backgroundColor: colors.primary, borderColor: focused ? colors.border : 'transparent' }];
+            return (
+              <View style={primaryButtonStyle}>
+                <Icon name="play-arrow" size={22} color={colors.onPrimary} />
+                <Text style={[styles.primaryLabel, { color: colors.onPrimary }]}>Play All</Text>
+              </View>
+            );
+          }}
         </Pressable>
         <Pressable onPress={() => navigation.navigate('PlaybackList', { itemId, recursive: true, shuffle: true })}>
           {({ focused }: PressableStateCallbackType) => (
@@ -83,8 +86,9 @@ export function CollectionDetail({ itemId, navigation }: Props) {
     </View>
   );
 
+  const containerStyle = [styles.container, { backgroundColor: colors.background }];
   return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
+    <View style={containerStyle}>
       <ItemGrid
         items={items}
         numColumns={6}
@@ -108,6 +112,9 @@ export function CollectionDetail({ itemId, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
   loading: {
     flex: 1,
     alignItems: 'center',

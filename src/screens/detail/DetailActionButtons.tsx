@@ -26,22 +26,23 @@ export function DetailActionButtons({ item, onPlay, onToggleFavorite, onToggleWa
   return (
     <View style={styles.row}>
       <Pressable hasTVPreferredFocus onPress={onPlay}>
-        {({ focused }: PressableStateCallbackType) => (
-          <View
-            style={[
-              styles.primaryButton,
-              { backgroundColor: colors.primary, borderColor: focused ? colors.border : 'transparent' },
-            ]}
-          >
-            <Icon name="play-arrow" size={22} color={colors.onPrimary} />
-            <Text style={[styles.primaryLabel, { color: colors.onPrimary }]}>
-              {resumeMs > 0 ? `Resume` : 'Play'}
-            </Text>
-            {resumeMs > 0 && runtimeMs > 0 ? (
-              <Text style={[styles.remaining, { color: colors.onPrimary }]}>{formatTimeRemaining(runtimeMs - resumeMs)}</Text>
-            ) : null}
-          </View>
-        )}
+        {({ focused }: PressableStateCallbackType) => {
+          const primaryButtonStyle = [
+            styles.primaryButton,
+            { backgroundColor: colors.primary, borderColor: focused ? colors.border : 'transparent' },
+          ];
+          const primaryLabelStyle = [styles.primaryLabel, { color: colors.onPrimary }];
+          const remainingStyle = [styles.remaining, { color: colors.onPrimary }];
+          return (
+            <View style={primaryButtonStyle}>
+              <Icon name="play-arrow" size={22} color={colors.onPrimary} />
+              <Text style={primaryLabelStyle}>{resumeMs > 0 ? `Resume` : 'Play'}</Text>
+              {resumeMs > 0 && runtimeMs > 0 ? (
+                <Text style={remainingStyle}>{formatTimeRemaining(runtimeMs - resumeMs)}</Text>
+              ) : null}
+            </View>
+          );
+        }}
       </Pressable>
       {extra}
       <IconButton

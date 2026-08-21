@@ -5,6 +5,16 @@
     "eslint:recommended",
     "plugin:@amazon-devices/eslint-plugin-kepler/kepler"
   ],
+  "rules": {
+    // Every @amazon-devices/* import is a "system distributed library" already present
+    // on-device, so this fires on essentially every file in the project - see the plugin's
+    // own README, which documents this exact override as the supported way to silence it
+    // once you understand the implication (a device fleet on an older OS version may not
+    // have that system library yet; see @amazon-devices/kepler/sdl-package-version-check,
+    // still enabled, for the package.json-level version-range check that actually guards
+    // against that).
+    "@amazon-devices/kepler/sdl-package-version-check-imports": "off"
+  },
   "overrides": [
     {
       "files": ["**/*.ts", "**/*.tsx"],

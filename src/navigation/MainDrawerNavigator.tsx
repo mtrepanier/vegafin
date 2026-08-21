@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { createDrawerNavigator, type DrawerContentComponentProps } from '@amazon-devices/react-navigation__drawer';
 import { HomeScreen } from '../screens/HomeScreen';
 import { SearchScreen } from '../screens/SearchScreen';
@@ -34,24 +34,16 @@ function DrawerContent({ navigation, state }: DrawerContentComponentProps) {
     { label: 'Favorites', route: 'Favorites' },
     { label: 'Discover', route: 'Discover' },
   ];
+  const containerStyle = [styles.container, { backgroundColor: colors.surface }];
   return (
-    <View style={{ flex: 1, backgroundColor: colors.surface, paddingTop: 48, paddingHorizontal: 16, gap: 8 }}>
+    <View style={containerStyle}>
       {items.map((item) => {
         const focused = state.routeNames[state.index] === item.route;
+        const rowStyle = [styles.row, { backgroundColor: focused ? colors.primaryContainer : 'transparent' }];
+        const labelStyle = [styles.label, { color: focused ? colors.onPrimaryContainer : colors.onSurface }];
         return (
-          <Pressable
-            key={item.route}
-            onPress={() => navigation.navigate(item.route as never)}
-            style={{
-              paddingVertical: 12,
-              paddingHorizontal: 12,
-              borderRadius: 8,
-              backgroundColor: focused ? colors.primaryContainer : 'transparent',
-            }}
-          >
-            <Text style={{ color: focused ? colors.onPrimaryContainer : colors.onSurface, fontSize: 16 }}>
-              {item.label}
-            </Text>
+          <Pressable key={item.route} onPress={() => navigation.navigate(item.route as never)} style={rowStyle}>
+            <Text style={labelStyle}>{item.label}</Text>
           </Pressable>
         );
       })}
@@ -59,11 +51,17 @@ function DrawerContent({ navigation, state }: DrawerContentComponentProps) {
   );
 }
 
+const styles = StyleSheet.create({
+  container: { flex: 1, paddingTop: 48, paddingHorizontal: 16, gap: 8 },
+  row: { paddingVertical: 12, paddingHorizontal: 12, borderRadius: 8 },
+  label: { fontSize: 16 },
+});
+
 export function MainDrawerNavigator() {
   return (
     <Drawer.Navigator
       screenOptions={{ headerShown: false, drawerType: 'permanent', drawerStyle: { width: 240 } }}
-      drawerContent={(props) => <DrawerContent {...props} />}
+      drawerContent={DrawerContent}
     >
       <Drawer.Screen name="Home" component={HomeScreen} />
       <Drawer.Screen name="Search" component={SearchScreen} />

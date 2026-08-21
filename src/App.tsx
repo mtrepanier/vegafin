@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { NavigationContainer } from '@amazon-devices/react-navigation__native';
 import { ThemeProvider, useTheme } from './theme/ThemeContext';
 import {
@@ -18,8 +18,9 @@ function Root() {
   const currentUser = useCurrentUser();
 
   if (!ready) {
+    const loadingStyle = [styles.loading, { backgroundColor: colors.background }];
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}>
+      <View style={loadingStyle}>
         <ActivityIndicator color={colors.primary} />
       </View>
     );
@@ -59,3 +60,7 @@ export function App() {
     </ThemeProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+});

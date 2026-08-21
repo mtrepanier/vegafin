@@ -582,6 +582,11 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
   }
 
   const progressPercent = durationSec > 0 ? Math.min(100, Math.max(0, (positionSec / durationSec) * 100)) : 0;
+  const iconChipStyle = (focused: boolean) => [
+    styles.iconChip,
+    { backgroundColor: focused ? colors.primaryContainer : 'rgba(0,0,0,0.4)' },
+  ];
+  const progressTrackStyle = [styles.progressTrack, { backgroundColor: 'rgba(255,255,255,0.3)' }];
 
   return (
     <View key={itemId} style={styles.container}>
@@ -615,7 +620,7 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
         <View style={styles.topBar}>
           <Pressable onPress={onExit}>
             {({ focused }: PressableStateCallbackType) => (
-              <View style={[styles.iconChip, { backgroundColor: focused ? colors.primaryContainer : 'rgba(0,0,0,0.4)' }]}>
+              <View style={iconChipStyle(focused)}>
                 <Icon name="arrow-back" size={22} color={colors.onBackground} />
               </View>
             )}
@@ -628,7 +633,7 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
           {audioTracks.length > 1 || subtitleTracks.length > 0 ? (
             <Pressable onPress={() => setPickerOpen((v) => !v)}>
               {({ focused }: PressableStateCallbackType) => (
-                <View style={[styles.iconChip, { backgroundColor: focused ? colors.primaryContainer : 'rgba(0,0,0,0.4)' }]}>
+                <View style={iconChipStyle(focused)}>
                   <Icon name="closed-caption" size={22} color={colors.onBackground} />
                 </View>
               )}
@@ -641,13 +646,13 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
         <View style={styles.bottomBar}>
           <Pressable onPress={togglePlayPause}>
             {({ focused }: PressableStateCallbackType) => (
-              <View style={[styles.iconChip, { backgroundColor: focused ? colors.primaryContainer : 'rgba(0,0,0,0.4)' }]}>
+              <View style={iconChipStyle(focused)}>
                 <Icon name={paused ? 'play-arrow' : 'pause'} size={22} color={colors.onBackground} />
               </View>
             )}
           </Pressable>
           <Text style={[styles.timeText, { color: colors.onBackground }]}>{formatTime(positionSec)}</Text>
-          <View style={[styles.progressTrack, { backgroundColor: 'rgba(255,255,255,0.3)' }]}>
+          <View style={progressTrackStyle}>
             <View style={[styles.progressFill, { width: `${progressPercent}%`, backgroundColor: colors.primary }]} />
           </View>
           <Text style={[styles.timeText, { color: colors.onBackground }]}>{formatTime(durationSec)}</Text>
@@ -719,20 +724,21 @@ function PickerRow({ label, selected, onPress }: { label: string; selected: bool
   const { colors } = useTheme();
   return (
     <Pressable onPress={onPress}>
-      {({ focused }: PressableStateCallbackType) => (
-        <Text
-          style={[
-            styles.pickerRow,
-            {
-              color: selected ? colors.primary : colors.onSurface,
-              backgroundColor: focused ? colors.primaryContainer : 'transparent',
-            },
-          ]}
-        >
-          {selected ? '✓ ' : ''}
-          {label}
-        </Text>
-      )}
+      {({ focused }: PressableStateCallbackType) => {
+        const rowStyle = [
+          styles.pickerRow,
+          {
+            color: selected ? colors.primary : colors.onSurface,
+            backgroundColor: focused ? colors.primaryContainer : 'transparent',
+          },
+        ];
+        return (
+          <Text style={rowStyle}>
+            {selected ? '✓ ' : ''}
+            {label}
+          </Text>
+        );
+      }}
     </Pressable>
   );
 }

@@ -60,41 +60,45 @@ export function PosterCard({
       onPress={onPress}
       onLongPress={onLongPress}
     >
-      {({ focused }: PressableStateCallbackType) => (
-        <Animated.View style={{ width: outerWidth, transform: [{ scale }] }}>
-          <View
-            style={[
-              styles.imageWrap,
-              {
-                width: outerWidth,
-                height: metrics.height + layout.focusBorderWidth * 2,
-                borderColor: focused ? colors.border : 'transparent',
-              },
-            ]}
-          >
-            <CardImage
-              uri={uri}
-              width={metrics.width}
-              height={metrics.height}
-              progressPercent={progressPercent}
-              watched={watched}
-              favorite={favorite}
-            />
-          </View>
-          {title ? (
-            <View style={styles.textWrap}>
-              <Text numberOfLines={1} style={[styles.title, { color: colors.onBackground }]}>
-                {title}
-              </Text>
-              {subtitle ? (
-                <Text numberOfLines={1} style={[styles.subtitle, { color: colors.onSurfaceVariant }]}>
-                  {subtitle}
-                </Text>
-              ) : null}
+      {({ focused }: PressableStateCallbackType) => {
+        const outerStyle = { width: outerWidth, transform: [{ scale }] };
+        const imageWrapStyle = [
+          styles.imageWrap,
+          {
+            width: outerWidth,
+            height: metrics.height + layout.focusBorderWidth * 2,
+            borderColor: focused ? colors.border : 'transparent',
+          },
+        ];
+        const titleStyle = [styles.title, { color: colors.onBackground }];
+        const subtitleStyle = [styles.subtitle, { color: colors.onSurfaceVariant }];
+        return (
+          <Animated.View style={outerStyle}>
+            <View style={imageWrapStyle}>
+              <CardImage
+                uri={uri}
+                width={metrics.width}
+                height={metrics.height}
+                progressPercent={progressPercent}
+                watched={watched}
+                favorite={favorite}
+              />
             </View>
-          ) : null}
-        </Animated.View>
-      )}
+            {title ? (
+              <View style={styles.textWrap}>
+                <Text numberOfLines={1} style={titleStyle}>
+                  {title}
+                </Text>
+                {subtitle ? (
+                  <Text numberOfLines={1} style={subtitleStyle}>
+                    {subtitle}
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+          </Animated.View>
+        );
+      }}
     </Pressable>
   );
 }
