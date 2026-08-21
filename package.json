@@ -5,6 +5,7 @@
   "description": "VegaFin - a Jellyfin TV client for Amazon Vega OS",
   "scripts": {
     "clean": "rm -rf node_modules buildinfo.json dist build",
+    "postinstall": "patch-package",
     "start": "react-native start",
     "test": "jest --colors",
     "test:snapshot": "jest --colors --updateSnapshot",
@@ -17,30 +18,26 @@
     "release": "npm-run-all lint typecheck test build"
   },
   "dependencies": {
-    "react": "19.2.0",
-    "react-native": "0.83.0",
-    "@amazon-devices/react-native-kepler": "~4.0.0",
-
+    "@amazon-devices/kepler-file-system": "~0.0.7",
+    "@amazon-devices/kepler-graphics": "~2.4.0",
     "@amazon-devices/react-native-async-storage__async-storage": "~2.1.0",
+    "@amazon-devices/react-native-kepler": "~4.0.0",
     "@amazon-devices/react-native-safe-area-context": "~8.0.0",
     "@amazon-devices/react-native-screens": "~3.0.0",
     "@amazon-devices/react-native-svg": "~3.0.0",
     "@amazon-devices/react-native-vector-icons": "~2.1.1",
     "@amazon-devices/react-native-w3cmedia": "~2.3.2",
-
     "@amazon-devices/react-navigation__core": "~8.0.0",
     "@amazon-devices/react-navigation__drawer": "~8.0.0",
     "@amazon-devices/react-navigation__elements": "~8.0.0",
     "@amazon-devices/react-navigation__native": "~8.0.0",
     "@amazon-devices/react-navigation__native-stack": "~8.0.0",
     "@amazon-devices/react-navigation__routers": "~8.0.0",
-
-    "@amazon-devices/kepler-file-system": "~0.0.7",
-    "@amazon-devices/kepler-graphics": "~2.4.0",
-
     "@jellyfin/sdk": "^0.13.0",
-    "whatwg-url-without-unicode": "8.0.0-3",
     "base-64": "^1.0.0",
+    "react": "19.2.0",
+    "react-native": "0.83.0",
+    "whatwg-url-without-unicode": "8.0.0-3",
     "xmldom": "^0.6.0"
   },
   "engines": {
@@ -66,6 +63,7 @@
     "jest": "^29.7.0",
     "jsonc-eslint-parser": "^2.4.0",
     "npm-run-all": "^4.1.5",
+    "patch-package": "^8.0.1",
     "prettier": "^2.8.8",
     "react-test-renderer": "19.2.0",
     "ts-jest": "^29.2.5",
@@ -74,6 +72,8 @@
   "kepler": {
     "projectType": "application",
     "appName": "VegaFin",
-    "targets": ["tv"]
+    "targets": [
+      "tv"
+    ]
   }
 }

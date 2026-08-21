@@ -1,0 +1,35 @@
+diff --git a/node_modules/@jellyfin/sdk/lib/generated-client/common.js b/node_modules/@jellyfin/sdk/lib/generated-client/common.js
+index aa7bca1..ce0b77e 100644
+--- a/node_modules/@jellyfin/sdk/lib/generated-client/common.js
++++ b/node_modules/@jellyfin/sdk/lib/generated-client/common.js
+@@ -66,7 +66,17 @@ function setFlattenedQueryParams(urlSearchParams, parameter, key = "") {
+ const setSearchParams = function (url, ...objects) {
+     const searchParams = new URLSearchParams(url.search);
+     setFlattenedQueryParams(searchParams, objects);
+-    url.search = searchParams.toString();
++    const computed = searchParams.toString();
++    // PATCHED (see patches/@jellyfin+sdk+*.patch, applied via patch-package): Kepler's native
++    // URL.prototype.search setter silently no-ops on `url.search = string` (confirmed via
++    // on-device testing), so every GET request with query params (limit, parentId, fields,
++    // sort, pagination, ...) was going out with no query string at all. Mutating
++    // url.searchParams directly was tried next, but toPathString() below independently
++    // re-reads url.search afterwards, and that getter doesn't reflect searchParams mutations
++    // either on this platform - so stash the computed string on a plain custom property
++    // instead, which doesn't depend on any native URL accessor behavior at all, and have the
++    // patched toPathString() below prefer it when present.
++    url.__vegafinSearch = computed ? `?${computed}` : '';
+ };
+ /**
+  *
+@@ -86,7 +96,10 @@ const serializeDataIfNeeded = function (value, requestOptions, configuration) {
+  * @export
+  */
+ const toPathString = function (url) {
+-    return url.pathname + url.search + url.hash;
++    // PATCHED (see patches/@jellyfin+sdk+*.patch): prefer setSearchParams's stashed query
++    // string over the native url.search getter - see the comment there for why.
++    const search = url.__vegafinSearch !== undefined ? url.__vegafinSearch : url.search;
++    return url.pathname + search + url.hash;
+ };
+ /**
+  *

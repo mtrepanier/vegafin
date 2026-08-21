@@ -1,14 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@amazon-devices/react-navigation__native';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import { useTheme } from '../theme/ThemeContext';
 import { layout } from '../theme/types';
+import { usePinScrollToStart } from '../focus/usePinScrollToStart';
 import { useCurrentUser } from '../services/storage/ServerRepositoryContext';
-import { fetchDefaultHomeRowConfigs, fetchHomeRowItems, homeRowRef, type HomeRowConfig } from '../services/jellyfin/homeRows';
-import { primaryImageUrl, thumbImageUrl } from '../services/jellyfin/images';
+import { fetchDefaultHomeRowConfigs, fetchHomeRowItems, fetchUserLibraries, homeRowRef, type HomeRowConfig } from '../services/jellyfin/homeRows';
+import { continueWatchingImageUrl, primaryImageUrl } from '../services/jellyfin/images';
 import { ItemRow } from '../components/ItemRow';
 import { PosterCard } from '../components/cards/PosterCard';
+import { LibraryTile } from '../components/cards/LibraryTile';
 import { navigateToItem } from '../navigation/navigateToItem';
 import type { AppNavigationProp } from '../navigation/types';
 
@@ -21,11 +23,14 @@ interface RowState {
 // ui/main/HomePage.kt equivalent - a vertical list of rows, each fetched independently.
 export function HomeScreen() {
   const { colors } = useTheme();
+  const scrollRef = useRef<ScrollView>(null);
+  usePinScrollToStart(() => scrollRef.current?.scrollTo({ y: 0, animated: false }));
   const navigation = useNavigation<AppNavigationProp<'Home'>>();
   const currentUser = useCurrentUser();
   const userId = currentUser?.user.id;
 
   const [rows, setRows] = useState<RowState[] | null>(null);
+  const [libraries, setLibraries] = useState<BaseItemDto[] | null>(null);
   const [focusedItem, setFocusedItem] = useState<BaseItemDto | null>(null);
 
   useEffect(() => {
@@ -33,6 +38,12 @@ export function HomeScreen() {
       return;
     }
     let cancelled = false;
+
+    fetchUserLibraries(userId).then((items) => {
+      if (!cancelled) {
+        setLibraries(items);
+      }
+    });
 
     fetchDefaultHomeRowConfigs(userId).then((configs) => {
       if (cancelled) {
@@ -71,7 +82,30 @@ export function HomeScreen() {
   }
 
   return (
-    <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.content}>
+    <ScrollView
+      ref={scrollRef}
+      focusItemAlignment="start"
+      style={{ backgroundColor: colors.background }}
+      contentContainerStyle={styles.content}
+    >
+      <Text style={[styles.appTitle, { color: colors.onBackground }]}>My Media</Text>
+
+      {libraries && libraries.length > 0 ? (
+        <ItemRow
+          items={libraries}
+          autoFocus
+          keyExtractor={(library) => library.Id ?? ''}
+          renderItem={(library, _index, hasTVPreferredFocus, onFocus) => (
+            <LibraryTile
+              library={library}
+              hasTVPreferredFocus={hasTVPreferredFocus}
+              onFocus={onFocus}
+              onPress={() => library.Id && navigation.navigate('ItemGrid', { title: library.Name ?? 'Library', parentId: library.Id })}
+            />
+          )}
+        />
+      ) : null}
+
       {focusedItem ? (
         <View style={styles.header}>
           <Text numberOfLines={1} style={[styles.headerTitle, { color: colors.onBackground }]}>
@@ -93,14 +127,17 @@ export function HomeScreen() {
             </View>
           );
         }
-        const isContinueWatching = row.config.kind === 'continueWatching';
-        const metrics = isContinueWatching ? layout.landscape : layout.poster;
+        // Both rows show episodes/movies with a landscape screenshot-style image (Thumb,
+        // falling back to Primary) rather than a poster - see continueWatchingImageUrl.
+        const isLandscapeRow = row.config.kind === 'continueWatching' || row.config.kind === 'nextUp';
+        const metrics = isLandscapeRow ? layout.landscape : layout.poster;
 
         return (
           <ItemRow
             key={row.config.key}
             title={row.config.title}
             items={row.items}
+            autoFocus={false}
             keyExtractor={(item) => item.Id ?? ''}
             showViewMore={row.items.length >= 20}
             onViewMorePress={() =>
@@ -108,11 +145,7 @@ export function HomeScreen() {
             }
             renderItem={(item, _index, hasTVPreferredFocus, onFocus) => (
               <PosterCard
-                uri={
-                  isContinueWatching
-                    ? (thumbImageUrl(item, metrics.width) ?? primaryImageUrl(item, metrics.width))
-                    : primaryImageUrl(item, metrics.width)
-                }
+                uri={isLandscapeRow ? continueWatchingImageUrl(item, metrics.width) : primaryImageUrl(item, metrics.width)}
                 metrics={metrics}
                 title={item.Name ?? undefined}
                 subtitle={item.SeriesName ?? undefined}
@@ -142,6 +175,12 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingVertical: layout.contentPadding,
+  },
+  appTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    paddingHorizontal: layout.contentPadding,
+    marginBottom: layout.rowSpacing,
   },
   header: {
     paddingHorizontal: layout.contentPadding,

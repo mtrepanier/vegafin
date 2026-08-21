@@ -11,10 +11,12 @@ interface Props {
   title?: string;
   people: BaseItemPerson[];
   navigation: AppNavigationProp<keyof DrawerParamList>;
+  /** See `ItemRow`'s `autoFocus` doc - false on every page that already has a more authoritative initial focus target (the Play button). */
+  autoFocus?: boolean;
 }
 
 /** Cast/crew row shared by Movie/Episode/SeriesOverview detail pages (`PersonRow.kt`). */
-export function CastRow({ title = 'Cast & Crew', people, navigation }: Props) {
+export function CastRow({ title = 'Cast & Crew', people, navigation, autoFocus = true }: Props) {
   if (people.length === 0) {
     return null;
   }
@@ -22,6 +24,7 @@ export function CastRow({ title = 'Cast & Crew', people, navigation }: Props) {
     <ItemRow
       title={title}
       items={people}
+      autoFocus={autoFocus}
       keyExtractor={(person, index) => person.Id ?? String(index)}
       renderItem={(person, _index, hasTVPreferredFocus, onFocus) => (
         <PosterCard

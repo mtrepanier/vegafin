@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@amazon-devices/react-navigation__native';
 import { PersonKind } from '@jellyfin/sdk/lib/generated-client/models/person-kind';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import { useTheme } from '../theme/ThemeContext';
+import { usePinScrollToStart } from '../focus/usePinScrollToStart';
 import { useCurrentUser } from '../services/storage/ServerRepositoryContext';
 import { fetchEpisodes, fetchItem, fetchSeasons, setFavorite, setWatched } from '../services/jellyfin/detail';
 import { ticksToMs } from '../util/format';
@@ -21,9 +22,24 @@ import type { AppNavigationProp, DrawerParamList } from '../navigation/types';
  * classic non-binge SeriesDetails page wasn't built.
  */
 export function SeriesOverviewScreen() {
-  const { colors } = useTheme();
   const route = useRoute<RouteProp<DrawerParamList, 'SeriesOverview'>>();
   const navigation = useNavigation<AppNavigationProp<'SeriesOverview'>>();
+  // Keyed by itemId (see MediaItemScreen.tsx's key comment for why): navigating from one
+  // series to another calls navigate() with new params on this same route, which would
+  // otherwise reuse this body's ScrollView/focus state instead of starting fresh.
+  return <SeriesOverviewBody key={route.params.itemId} route={route} navigation={navigation} />;
+}
+
+function SeriesOverviewBody({
+  route,
+  navigation,
+}: {
+  route: RouteProp<DrawerParamList, 'SeriesOverview'>;
+  navigation: AppNavigationProp<'SeriesOverview'>;
+}) {
+  const { colors } = useTheme();
+  const scrollRef = useRef<ScrollView>(null);
+  usePinScrollToStart(() => scrollRef.current?.scrollTo({ y: 0, animated: false }));
   const { itemId, seasonEpisode } = route.params;
   const currentUser = useCurrentUser();
   const userId = currentUser?.user.id;
@@ -117,7 +133,7 @@ export function SeriesOverviewScreen() {
   const selectedSeasonId = seasons[selectedSeasonIndex]?.Id;
 
   return (
-    <ScrollView style={{ backgroundColor: colors.background }}>
+    <ScrollView ref={scrollRef} focusItemAlignment="start" style={{ backgroundColor: colors.background }}>
       <FocusedEpisodeHeader series={series} episode={focusedEpisode} />
       {focusedEpisode ? (
         <FocusedEpisodeFooter
@@ -128,7 +144,7 @@ export function SeriesOverviewScreen() {
         />
       ) : null}
 
-      <SeasonTabs seasons={seasons} selectedIndex={selectedSeasonIndex} onSelect={setSelectedSeasonIndex} />
+      <SeasonTabs seasons={seasons} selectedIndex={selectedSeasonIndex} onSelect={setSelectedSeasonIndex} autoFocus={false} />
 
       {episodes === null ? (
         <View style={styles.episodesLoading}>
@@ -144,7 +160,7 @@ export function SeriesOverviewScreen() {
         />
       )}
 
-      <CastRow people={cast} navigation={navigation} />
+      <CastRow people={cast} navigation={navigation} autoFocus={false} />
     </ScrollView>
   );
 }

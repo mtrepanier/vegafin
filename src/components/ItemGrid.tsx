@@ -3,6 +3,7 @@ import { ActivityIndicator, FlatList, StyleSheet, type ListRenderItem } from 're
 import { useTheme } from '../theme/ThemeContext';
 import { layout } from '../theme/types';
 import { useLastFocusedIndex } from '../focus/useLastFocusedIndex';
+import { usePinScrollToStart } from '../focus/usePinScrollToStart';
 import { FocusGroup } from '../focus/FocusGroup';
 
 interface Props<T> {
@@ -13,6 +14,12 @@ interface Props<T> {
   onEndReached?: () => void;
   loading?: boolean;
   header?: React.ReactElement | null;
+  /**
+   * Whether this grid claims `hasTVPreferredFocus` for its remembered card at all - see
+   * `ItemRow`'s `autoFocus` doc for why this matters: leave the default `true` only when
+   * nothing else on the same screen (e.g. a header Play button) already owns initial focus.
+   */
+  autoFocus?: boolean;
 }
 
 /**
@@ -20,15 +27,25 @@ interface Props<T> {
  * remembered index just claims `hasTVPreferredFocus` rather than this component redirecting
  * focus itself.
  */
-export function ItemGrid<T>({ items, numColumns = 6, keyExtractor, renderItem, onEndReached, loading, header }: Props<T>) {
+export function ItemGrid<T>({
+  items,
+  numColumns = 6,
+  keyExtractor,
+  renderItem,
+  onEndReached,
+  loading,
+  header,
+  autoFocus = true,
+}: Props<T>) {
   const { colors } = useTheme();
   const { focusedIndex, onItemFocus } = useLastFocusedIndex(0);
   const listRef = useRef<FlatList<T>>(null);
+  usePinScrollToStart(() => listRef.current?.scrollToOffset({ offset: 0, animated: false }));
 
   const handleFocus = useCallback((index: number) => onItemFocus(index), [onItemFocus]);
 
   const renderRow: ListRenderItem<T> = ({ item, index }) =>
-    renderItem(item, index, index === focusedIndex, () => handleFocus(index));
+    renderItem(item, index, autoFocus && index === focusedIndex, () => handleFocus(index));
 
   return (
     <FocusGroup style={styles.group} trapFocusLeft trapFocusRight>
@@ -39,6 +56,7 @@ export function ItemGrid<T>({ items, numColumns = 6, keyExtractor, renderItem, o
         numColumns={numColumns}
         keyExtractor={keyExtractor}
         showsVerticalScrollIndicator={false}
+        focusItemAlignment="start"
         contentContainerStyle={{ padding: layout.contentPadding, gap: layout.cardSpacing }}
         columnWrapperStyle={numColumns > 1 ? { gap: layout.cardSpacing } : undefined}
         onEndReached={onEndReached}

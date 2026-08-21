@@ -28,17 +28,23 @@ export function MediaItemScreen() {
     }
   }, [navigation, itemId, type]);
 
+  // Every case below is keyed by itemId: navigating from one MediaItem (e.g. a "More Like
+  // This" poster) to another calls navigation.navigate() with new params on this same route,
+  // which React Navigation resolves by updating this screen's params in place rather than
+  // pushing a new one - without a key tied to itemId, these detail components would stay
+  // mounted across that change, carrying over their previous ScrollView offset and focus
+  // memory onto the new item's content instead of starting at the top.
   switch (type) {
     case BaseItemKind.Movie:
     case BaseItemKind.Video:
     case BaseItemKind.MusicVideo:
-      return <MovieDetail itemId={itemId} navigation={navigation} />;
+      return <MovieDetail key={itemId} itemId={itemId} navigation={navigation} />;
     case BaseItemKind.Episode:
-      return <EpisodeDetail itemId={itemId} navigation={navigation} />;
+      return <EpisodeDetail key={itemId} itemId={itemId} navigation={navigation} />;
     case BaseItemKind.BoxSet:
-      return <CollectionDetail itemId={itemId} navigation={navigation} />;
+      return <CollectionDetail key={itemId} itemId={itemId} navigation={navigation} />;
     case BaseItemKind.Person:
-      return <PersonDetail itemId={itemId} navigation={navigation} />;
+      return <PersonDetail key={itemId} itemId={itemId} navigation={navigation} />;
     case BaseItemKind.Series:
       return null; // redirecting, see effect above
     default:

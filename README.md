@@ -22,9 +22,13 @@ Phase 0's scaffold (navigation graph, auth/session, theming) is done, and Phase 
 - A **focus-managed card/row system** (`components/ItemRow.tsx`, `components/ItemGrid.tsx`,
   `components/cards/`) built on native `TVFocusGuideView`/`hasTVPreferredFocus` rather than any
   custom D-pad plumbing — see [Focus system](#focus-system) below.
-- The **Home screen**, with a fixed set of rows (Continue Watching + Next Up combined, one
-  Recently Added row per library) rather than Kotlin's user-configurable row settings, which is
-  Phase 2 territory.
+- The **Home screen** ("My Media"), with a library-shortcut row at the top (artwork + name per
+  library, linking straight to that library's full grid) followed by a fixed set of rows —
+  separate Continue Watching and Next Up rows (an earlier version merged them client-side with
+  a SeriesId dedup, which just meant genuinely in-progress items got crowded out whenever a
+  same-series "next up" entry happened to load first — split apart to match the server's own
+  `/Items/Resume` and `/Shows/NextUp` results directly), one Recently Added row per library —
+  rather than Kotlin's user-configurable row settings, which is Phase 2 territory.
 - **Library grid/list browsing** (`FilteredCollection`/`ItemGrid`/`MoreHomeRow`/`Favorites`),
   with sort and a grid/list view toggle.
 - **Detail pages** for Movie, Episode, Collection (box set), and Person, plus a full
@@ -84,8 +88,43 @@ cover it directly:
   re-entry — no `TVFocusGuideView.destinations` ref-juggling required for the common case.
 - `TVFocusGuideView` (`focus/FocusGroup.tsx`) is used more narrowly, to trap focus at a row's
   or grid's edges (`trapFocusUp/Down/Left/Right`) rather than to redirect it.
-- Rows/grids scroll the remembered card into view themselves (`FlatList.scrollToIndex`) rather
-  than relying on any built-in "bring into view" behavior.
+- Scrolling the focused card into view is left entirely to the platform's own
+  `focusItemAlignment="start"` prop (set on every `ScrollView`/`FlatList` in this codebase —
+  type-augmented in `src/types/react-native-augmentations.d.ts` since stock RN's types don't
+  know about it). An earlier version also drove an explicit `FlatList.scrollToIndex` from
+  `ItemRow`'s own `onFocus`, redundant with `focusItemAlignment`; the two scroll computations
+  disagreeing slightly left the newly-focused card only partially in view instead of flush,
+  so that manual call was removed.
+
+**Gotcha #1 — pages opening scrolled away from the top.** Vega's native TV focus engine
+auto-scrolls the nearest scrollable ancestor to reveal whichever element first receives
+`hasTVPreferredFocus`, and its default alignment behaves like "center" rather than "start" —
+confirmed by `ScrollViewPropsKepler`'s `focusItemAlignment` prop existing at all (see above).
+Setting `focusItemAlignment="start"` everywhere fixes alignment *within* a given scrollable,
+but on its own doesn't stop a *parent* `ScrollView` from scrolling down to reveal a
+below-the-fold focused row in the first place. `focus/usePinScrollToStart.ts` is the
+belt-and-suspenders fix for that: it repeatedly re-asserts scroll position 0 on an interval
+for a short window after each screen mounts (a single delayed correction was tried first and
+lost the race against a later native auto-scroll pass, e.g. as poster images finished loading
+and shifted layout), and is wired into every page-level `ScrollView` plus `ItemRow`/`ItemGrid`
+— skipping itself wherever a deliberate deep-link target exists (e.g. `EpisodeRow` jumping
+straight to a specific episode), so it doesn't fight genuinely intentional initial scroll.
+
+**Gotcha #2 — the actual root cause on Home, more fundamental than #1.** Every `ItemRow`/
+`ItemGrid` on a screen independently defaults its own remembered focus index to 0 via
+`useLastFocusedIndex`, so with nothing else guarding it, *every row on Home simultaneously
+claimed* `hasTVPreferredFocus` on its own first card — the Play button, the Cast row's first
+person, the "More Like This" row's first poster, all at once on a detail page; every row's
+first card at once on Home. With multiple simultaneous claims, the platform resolves the
+ambiguity to *some* element that isn't necessarily the intended one, and no amount of
+scroll-position correction can fix that, since the actually-focused element (wherever the
+engine picked) keeps getting re-revealed on every subsequent layout/focus event. The fix is an
+`autoFocus` prop threaded through `ItemRow`, `ItemGrid`, `PosterRow`, `CastRow`, `SeasonTabs`,
+and `DetailActionButtons` (default `true`, matching the old always-on behavior): exactly one
+focusable region per screen now leaves it at the default, every other region on that same
+screen explicitly passes `autoFocus={false}`. See each screen's call sites for which region
+won that role (e.g. Home's library-shortcut row; a detail page's Play button; `SeriesOverview`'s
+episode row rather than its season tabs or footer).
 
 ### SDK-verified
 
@@ -97,9 +136,10 @@ fixed — most importantly, module resolution does **not** work the way the firs
 The scaffold now:
 
 - Installs clean: `npm install` — no `ERESOLVE` conflicts, no `.npmrc` overrides needed.
-- Passes `npm run typecheck` (`tsc --noEmit`) and `npm run lint` (0 errors; the ~29 remaining
-  warnings are Amazon's own informational "system distributed library" notices and a couple of
-  minor style nits — see below).
+- Passes `npm run typecheck` (`tsc --noEmit`) and `npm run lint` (0 errors, 0 warnings — the
+  Amazon "system distributed library" notice is silenced repo-wide in `.eslintrc` via the
+  plugin's own documented override, since it fired on essentially every `@amazon-devices/*`
+  import; the version-range check that actually matters, `sdl-package-version-check`, stays on).
 - **Actually builds**: `npm run build:debug` produces real, valid `.vpkg` packages for all
   three architectures (aarch64, armv7, x86_64) via `react-native build-vega`, and
   `manifest.toml`'s `[needs.module]` list is auto-populated by the build's autolinking step
@@ -114,31 +154,80 @@ working end-to-end via `vega virtual-device start` + `vega device install-app`/`
 Testing has been scoped to the Virtual Device only; a physical Fire TV/Fire Stick has not been
 tested against this codebase.
 
-### Native `URL`/`URLSearchParams` gotcha
+**App icon**: the manifest's `[package] icon` field takes a `@image/<filename>.png` reference,
+not a plain path — `vpt validate` errors on anything else (`Icon names must follow
+'@image/<icon_file_name>' format`), and the actual requirement (512x512 PNG, placed under
+`assets/image/`) isn't in any SDK error message; it only turned up in the Vega app manifest
+knowledge-base doc bundled with the "Kepler Studio" VS Code extension. `assets/image/icon.png`
++ `icon = "@image/icon.png"` in `manifest.toml` is what satisfies it.
 
-Worth documenting since it cost significant debugging time and isn't obvious from the code:
-Kepler's native `URL` implementation works correctly on its own — `new URL(...)`,
-`.searchParams` read off an instance, `.searchParams.set(key, value)` — all fine, and
-`index.js` does **not** polyfill or override `global.URL` (an earlier version did, as a
-workaround for an unrelated crash, but that override made Shaka Player's manifest/segment
-resolution hang forever on every `load()`).
+### Native `URL`/`URLSearchParams` gotcha — and the `@jellyfin/sdk` patch that fixes it for real
 
-What *is* broken natively is the whole-string assignment `url.search = someString`. The
-`@jellyfin/sdk`'s generated `setSearchParams` helper (`node_modules/@jellyfin/sdk/lib/
-generated-client/common.js`) uses exactly that pattern for every GET request with query
-params, and it silently no-ops — the request goes out with no query string at all. This
-first surfaced as Quick Connect 400ing with `"secret field is required"` even though the
-code was passing a `secret` param. The fix, applied narrowly rather than patching the SDK:
-call sites that hit this (currently just Quick Connect's `getQuickConnectState`, in
-`screens/setup/UserListScreen.tsx`) bypass the generated method and build the request via
+Worth documenting at length since it cost significant debugging time across two separate
+incidents, and the eventual fix is a patched dependency, which is easy to trip over later.
+
+Kepler's native `URL` implementation works correctly for construction and reads — `new
+URL(...)`, `.pathname`, `.hash`, `.searchParams` read off an instance — and `index.js` does
+**not** polyfill or override `global.URL` (an earlier version did, as a workaround for an
+unrelated crash, but that override made Shaka Player's manifest/segment resolution hang
+forever on every `load()`).
+
+What's broken is **writing** a query string back onto a `URL` instance, and it's broken in two
+different ways stacked on top of each other:
+
+1. The whole-string assignment `url.search = someString` silently no-ops.
+2. Mutating `url.searchParams` directly (`.set()`/`.append()`/`.delete()`) *seems* like the
+   fix — and is the pattern this codebase's own code uses successfully everywhere it builds
+   URLs by hand — but it doesn't help here specifically because nothing downstream reads
+   `.searchParams` back off the object. It's a red herring for this particular call path, not
+   a working alternative.
+
+The `@jellyfin/sdk`'s generated client hits both. Its shared `setSearchParams` helper
+(`node_modules/@jellyfin/sdk/lib/generated-client/common.js`) is used by **every** generated
+API method that takes query params — home rows, library sort/filter/pagination, Quick
+Connect, all of it — and originally did `url.search = searchParams.toString()` (bug #1). A
+separate `toPathString(url)` helper, called immediately afterward by each generated method to
+build the final request URL, independently does `url.pathname + url.search + url.hash` — so
+even switching `setSearchParams` to mutate `url.searchParams` instead (bug #2's trap) doesn't
+fix anything, because `toPathString` was never going to read `.searchParams` in the first
+place; it only ever looks at `.search`.
+
+**First incident**: this surfaced as Quick Connect 400ing with `"secret field is required"`
+even though the code was passing a `secret` param. Fixed narrowly at the time: `UserListScreen.tsx`'s
+`getQuickConnectState` bypasses the generated method entirely and builds the request via
 `api.getUri(path, params)` + `api.axiosInstance.get(...)` instead, which serializes query
-params through axios rather than through the SDK's buggy helper. **Other SDK call sites
-that pass query params through the generated `getXxxApi(api).xxx({...})` methods may have
-the same silent-drop bug** — it just degrades gracefully there (e.g. a missing `Limit`
-returns unfiltered results instead of erroring), so it hasn't been hunted down everywhere.
+params through axios rather than through the SDK's helper. That fix is still in place and
+still works, but is now redundant given the patch below — it just hasn't been reverted.
+
+**Second incident**: months of app usage later (in wall-clock terms of this project's
+development, not necessarily yours), every "Latest X" row on the Home screen was showing
+*identical* content regardless of library, because `getLatestMedia`'s `parentId` filter was
+being silently dropped the same way. This is when the bug's real scope became clear — it
+wasn't a Quick-Connect-specific quirk, it was every query-param request in the app, degrading
+silently (unfiltered/unpaginated results) rather than erroring, which is exactly why it took
+this long to notice elsewhere.
+
+**The actual fix** (`patches/@jellyfin+sdk+0.13.0.patch`, applied automatically via
+`patch-package`'s `postinstall` script — see `package.json`): `setSearchParams` computes the
+query string as before, then stashes it on a plain custom property, `url.__vegafinSearch`,
+instead of trying to write it through any native `URL` accessor at all. `toPathString` is
+patched to prefer that property when present, falling back to `url.search` otherwise. Neither
+half of the fix depends on any native `URL` write path behaving correctly, which is what makes
+it actually work where both `.search =` and `.searchParams` mutation didn't.
+
+This patch is regression-tested at `test/thirdPartyPatches/jellyfinSdkSearchParams.test.ts` —
+worth reading the comment there too, since Jest runs on Node's (spec-compliant) `URL` and
+can't reproduce the platform bug itself; that test only pins the patch's own input/output
+contract, so it won't catch this regressing on-device, only catch someone "cleaning up" the
+patch's logic without understanding why it's shaped this way.
+
+If `@jellyfin/sdk` is ever upgraded, `patch-package` will fail loudly (not silently) if the
+patch no longer applies cleanly — re-diff `common.js`'s `setSearchParams`/`toPathString` by
+hand and regenerate the patch (`npx patch-package @jellyfin/sdk`) rather than skipping it.
+
 `global.URLSearchParams` is still polyfilled (`whatwg-url-without-unicode`) in `index.js`,
-since the standalone `new URLSearchParams(str)` constructor needed it — that part was
-confirmed fine on its own and isn't the cause of the above.
+since the standalone `new URLSearchParams(str)` constructor needed it on its own — unrelated
+to the bug above, and confirmed fine independently.
 
 ## Architecture map
 
@@ -289,8 +378,14 @@ scoped to the **service/business-logic layer**, not screens or components:
 
 - Auth/session (`ServerRepository`), server URL scheme resolution/probing (`serverUrl`,
   `JellyfinClient`), the Jellyfin API layer (`playback` negotiation + progress reporting,
-  `homeRows`, `library`, `detail`, `images`, the `ItemPager` pagination hook), theming
-  (`ThemeContext`), and the focus system's `useLastFocusedIndex` hook.
+  `homeRows` including the Continue Watching/Next Up split, `library`, `detail`, `images`
+  including the Continue Watching Thumb/Primary fallback, the `ItemPager` pagination hook),
+  theming (`ThemeContext`), and the focus system's `useLastFocusedIndex` and
+  `usePinScrollToStart` hooks.
+- `test/thirdPartyPatches/jellyfinSdkSearchParams.test.ts` — a regression test for the patched
+  `@jellyfin/sdk` dependency itself (see the URL/URLSearchParams gotcha above). Pins the
+  patch's own input/output contract; can't reproduce the platform bug it fixes, since Jest
+  runs on Node's spec-compliant `URL`.
 - Deliberately **not** covered: `HomeScreen`/library/detail screens, `PlaybackScreens.tsx`,
   navigation, and the setup screens. These are tightly coupled to native Kepler view
   components (`KeplerVideoSurfaceView`, `useTVEventHandler`, `VideoPlayer`, drawer/stack
@@ -307,15 +402,17 @@ runner.
 
 ## Roadmap
 
-- **Phase 1** (done, verified on the Vega Virtual Device) — Home page rows, library grid/list
-  browsing, Movie/Episode/Collection/Person detail pages plus a binge-style Series overview,
-  core playback (`KeplerVideoSurfaceView` + a vendored Shaka Player over always-transcoded
-  HLS, full remote-control input, auto-hiding custom controls — see the correction above),
-  Quick Connect + password sign-in, and a focus-managed card/row system built on native
-  `TVFocusGuideView`/`hasTVPreferredFocus` (see [Focus system](#focus-system)). Deliberately
-  out of Phase 1's scope: user-configurable home rows, alphabet-jump library browsing,
-  trickplay, skip intro/outro, subtitle search/download/delay, WebSocket remote-control
-  commands — see the scope notes throughout `src/services/jellyfin/` and `src/screens/`.
+- **Phase 1** (done, verified on the Vega Virtual Device) — Home page ("My Media": a
+  library-shortcut row plus separate Continue Watching/Next Up/Recently-Added rows), library
+  grid/list browsing, Movie/Episode/Collection/Person detail pages plus a binge-style Series
+  overview, core playback (`KeplerVideoSurfaceView` + a vendored Shaka Player over
+  always-transcoded HLS, full remote-control input, auto-hiding custom controls — see the
+  correction above), Quick Connect + password sign-in, a focus-managed card/row system built
+  on native `TVFocusGuideView`/`hasTVPreferredFocus` (see [Focus system](#focus-system)), and a
+  real app icon (see the app-icon note above). Deliberately out of Phase 1's scope:
+  user-configurable home rows, alphabet-jump library browsing, trickplay, skip intro/outro,
+  subtitle search/download/delay, WebSocket remote-control commands — see the scope notes
+  throughout `src/services/jellyfin/` and `src/screens/`.
 - **Phase 2** — Settings screens, search, subtitle customization, trickplay, skip
   intro/outro, multi-server/user switching UI, PIN-lock routing.
 - **Phase 3** — Live TV guide + DVR, music playback (now playing/visualizer/lyrics),
@@ -328,12 +425,14 @@ src/
   App.tsx                     Root component: theme + session bootstrap + navigator switch
   navigation/                 Route graph (mirrors ui/nav/Destination.kt), navigateToItem.ts
   theme/                      Color palettes + ThemeContext (mirrors ui/theme/) + layout tokens
-  focus/                      FocusGroup.tsx, useLastFocusedIndex.ts - see Focus system above
+  focus/                      FocusGroup.tsx, useLastFocusedIndex.ts, usePinScrollToStart.ts -
+                               see Focus system above
   services/
     jellyfin/                 JellyfinClient.ts (@jellyfin/sdk wrapper), images.ts, ItemPager.ts,
                                homeRows.ts, library.ts, detail.ts, playback.ts
     storage/ServerRepository.ts   Session/auth (mirrors data/ServerRepository.kt)
-  components/                 ItemRow/ItemGrid/PosterRow, cards/, IconButton.tsx
+  components/                 ItemRow/ItemGrid/PosterRow, cards/ (incl. LibraryTile.tsx - Home's
+                               library-shortcut row), IconButton.tsx
   screens/
     HomeScreen.tsx, FavoritesScreen.tsx, SeriesOverviewScreen.tsx, MediaItemScreen.tsx
     library/                  FilteredCollection/ItemGrid/MoreHomeRow screens
@@ -342,8 +441,13 @@ src/
     setup/                     ServerList/UserList (password + Quick Connect)/PinEntry screens
   w3cmedia/                   Vendored Shaka Player + DOM/URL/fetch polyfills - see the playback
                                correction above. Excluded from lint (.eslintrc ignorePatterns).
-  types/                      Ambient .d.ts augmentations (react-native-kepler/vector-icons gaps)
+  types/                      Ambient .d.ts augmentations (react-native-kepler/vector-icons gaps,
+                               ScrollView/FlatList's focusItemAlignment - see Focus system above)
+assets/image/icon.png          512x512 app icon - see the app-icon note above
+patches/                       patch-package diffs, applied via package.json's postinstall -
+                                see the URL/URLSearchParams gotcha above for what and why
 index.js                       AppRegistry entry point (must be .js - see build note above)
 app.json                       App name; must match manifest.toml's main component id
-manifest.toml                  Vega app manifest ([needs.module] is autolinked, not hand-written)
+manifest.toml                  Vega app manifest ([needs.module] is autolinked, not hand-written;
+                                [package] icon is hand-written - see the app-icon note above)
 ```

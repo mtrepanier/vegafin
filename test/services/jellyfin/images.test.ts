@@ -1,5 +1,12 @@
 import { jellyfinClient } from '../../../src/services/jellyfin/JellyfinClient';
-import { primaryImageUrl, backdropImageUrl, logoImageUrl, thumbImageUrl, personImageUrl } from '../../../src/services/jellyfin/images';
+import {
+  primaryImageUrl,
+  backdropImageUrl,
+  logoImageUrl,
+  thumbImageUrl,
+  personImageUrl,
+  continueWatchingImageUrl,
+} from '../../../src/services/jellyfin/images';
 
 beforeAll(() => {
   jellyfinClient.update('https://jf.example.com', 'tok-123');
@@ -51,6 +58,23 @@ describe('thumbImageUrl', () => {
   it('builds a Thumb image URL with quality', () => {
     const url = thumbImageUrl({ Id: 'item-1', ImageTags: { Thumb: 'thumb-1' } }, 400);
     expect(url).toBe('https://jf.example.com/Items/item-1/Images/Thumb?fillWidth=400&quality=90&tag=thumb-1');
+  });
+});
+
+describe('continueWatchingImageUrl', () => {
+  it('uses Thumb when the item actually has a Thumb tag', () => {
+    const url = continueWatchingImageUrl({ Id: 'item-1', ImageTags: { Thumb: 'thumb-1', Primary: 'primary-1' } }, 280);
+    expect(url).toBe('https://jf.example.com/Items/item-1/Images/Thumb?fillWidth=280&quality=90&tag=thumb-1');
+  });
+
+  it('falls back to Primary when the item has no Thumb tag (the common case for episodes)', () => {
+    const url = continueWatchingImageUrl({ Id: 'item-1', ImageTags: { Primary: 'primary-1' } }, 280);
+    expect(url).toBe('https://jf.example.com/Items/item-1/Images/Primary?fillWidth=280&quality=90&tag=primary-1');
+  });
+
+  it('falls back to Primary (with no tag) when the item has neither', () => {
+    const url = continueWatchingImageUrl({ Id: 'item-1' }, 280);
+    expect(url).toBe('https://jf.example.com/Items/item-1/Images/Primary?fillWidth=280&quality=90');
   });
 });
 

@@ -13,6 +13,9 @@ schema-version = 1
 id = "com.vegafin.app"
 title = "VegaFin"
 version = "0.0.1"
+# 512x512 PNG at assets/image/icon.png - referenced by filename via the @image/ prefix, per
+# the Vega app manifest spec (PNG, 512x512, placed under assets/image/).
+icon = "@image/icon.png"
 
 [os.version]
 min = "1.2"

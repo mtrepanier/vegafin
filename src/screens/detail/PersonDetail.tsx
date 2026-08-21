@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { BaseItemKind } from '@jellyfin/sdk/lib/generated-client/models/base-item-kind';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import { useTheme } from '../../theme/ThemeContext';
 import { layout } from '../../theme/types';
+import { usePinScrollToStart } from '../../focus/usePinScrollToStart';
 import { useCurrentUser } from '../../services/storage/ServerRepositoryContext';
 import { fetchItem, fetchPersonCredits, setFavorite } from '../../services/jellyfin/detail';
 import { primaryImageUrl } from '../../services/jellyfin/images';
@@ -33,6 +34,8 @@ function formatBio(person: BaseItemDto): string | undefined {
 // ui/detail/PersonPage.kt equivalent.
 export function PersonDetail({ itemId, navigation }: Props) {
   const { colors } = useTheme();
+  const scrollRef = useRef<ScrollView>(null);
+  usePinScrollToStart(() => scrollRef.current?.scrollTo({ y: 0, animated: false }));
   const currentUser = useCurrentUser();
   const userId = currentUser?.user.id;
   const [person, setPerson] = useState<BaseItemDto | null>(null);
@@ -81,7 +84,7 @@ export function PersonDetail({ itemId, navigation }: Props) {
   const bio = formatBio(person);
 
   return (
-    <ScrollView style={{ backgroundColor: colors.background }}>
+    <ScrollView ref={scrollRef} focusItemAlignment="start" style={{ backgroundColor: colors.background }}>
       <View style={styles.header}>
         <View style={[styles.photo, { backgroundColor: colors.surfaceVariant }]}>
           {photoUri ? <Image source={{ uri: photoUri }} style={StyleSheet.absoluteFill} resizeMode="cover" /> : null}
@@ -101,9 +104,9 @@ export function PersonDetail({ itemId, navigation }: Props) {
         </View>
       </View>
 
-      <PosterRow title="Movies" items={movies} navigation={navigation} />
-      <PosterRow title="TV Shows" items={series} navigation={navigation} />
-      <PosterRow title="Episodes" items={episodes} navigation={navigation} metrics={layout.landscape} />
+      <PosterRow title="Movies" items={movies} navigation={navigation} autoFocus={false} />
+      <PosterRow title="TV Shows" items={series} navigation={navigation} autoFocus={false} />
+      <PosterRow title="Episodes" items={episodes} navigation={navigation} metrics={layout.landscape} autoFocus={false} />
     </ScrollView>
   );
 }
