@@ -1,13 +1,18 @@
-// @jellyfin/sdk's generated client needs URL/URLSearchParams on the global scope, which
-// React Native (and Vega's RN fork) only partially implement. Must be the first import.
+// Kepler's native `URL` works fine on its own - confirmed against AmbientFlare/astra-tv, a
+// separate Jellyfin-for-Vega client that constructs `new URL(...)` throughout its own service
+// layer with no polyfill, including reading `url.searchParams` off those instances. Do not
+// override global.URL: an earlier version of this file replaced it app-wide (as a workaround
+// for a since-fixed, unrelated crash - see git history), and that replacement's `URL` made
+// Shaka Player's manifest/segment resolution hang forever on every load().
 //
-// react-native-url-polyfill's own URL export reads NativeModules.BlobModule at import
-// time for its (unused here) createObjectURL support, which on Kepler throws
-// "__fbBatchedBridgeConfig is not set" before global.nativeModuleProxy is wired up. Its
-// underlying whatwg-url-without-unicode package is pure JS with no such native touch, so
-// import that directly instead.
-import { URL, URLSearchParams } from 'whatwg-url-without-unicode';
-global.URL = URL;
+// The one piece that IS broken natively is the *standalone* `new URLSearchParams(str)`
+// constructor (as opposed to `.searchParams` read off a URL instance, which works) - the
+// @jellyfin/sdk's internal `setSearchParams` helper uses exactly that standalone form for
+// every GET request with query params, and every such request was silently going out with no
+// query string at all, surfacing as a 400 from the server (confirmed via Quick Connect's
+// `?secret=...` param vanishing). Polyfilling only URLSearchParams, and leaving native URL
+// alone, fixes that without reintroducing the Shaka hang.
+import { URLSearchParams } from 'whatwg-url-without-unicode';
 global.URLSearchParams = URLSearchParams;
 
 import { AppRegistry } from 'react-native';

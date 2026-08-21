@@ -30,23 +30,46 @@ Phase 0's scaffold (navigation graph, auth/session, theming) is done, and Phase 
 - **Detail pages** for Movie, Episode, Collection (box set), and Person, plus a full
   binge-style `SeriesOverview` page (season tabs + focused-episode header/footer + episode row)
   for series browsing generally — Phase 1 didn't build the classic non-binge `SeriesDetails`.
-- **Core playback**: direct play → direct stream → transcode negotiation, resume position, 5s
-  progress reporting, and basic controls (play/pause/seek via the native player chrome, plus a
-  custom audio/subtitle track picker) via `@amazon-devices/react-native-w3cmedia`'s
-  `VideoPlayer`/`KeplerVideoView` — see the correction below.
+- **Core playback**: `negotiatePlayback` always forces server-side HLS transcoding (see the
+  correction below for why direct play was dropped), resume position, 5s progress reporting,
+  full remote-control input (play/pause, fast-forward/rewind, back, all confirmed working on
+  the Vega Virtual Device), a custom on-screen title/play-pause/progress-bar/track-picker UI
+  that auto-hides after 5s of inactivity (matching the Android client's behavior), and Quick
+  Connect sign-in alongside username/password. See the correction below for the actual player
+  architecture — it's not what an earlier draft of this README described.
 
 Still not implemented: settings screens, search, subtitle customization/delay, trickplay, skip
 intro/outro, live TV, music playback, Seerr/Jellyseerr discover. See [Roadmap](#roadmap).
 
-### Correction: no Shaka Player
+### Correction: playback uses KeplerVideoSurfaceView + a vendored Shaka Player, not KeplerVideoView
 
-An earlier draft of this README said playback would use "Shaka Player for adaptive
-streaming." That's wrong: there is no Shaka Player, and no JS ABR/manifest-parsing library at
-all, anywhere in this project's dependency tree. `@amazon-devices/react-native-w3cmedia`'s
-`VideoPlayer` implements the standard W3C `HTMLVideoElement` interface — `src` is a plain
-string setter, exactly like a browser `<video>` tag — so HLS/DASH URLs returned by Jellyfin's
-`PlaybackInfo` negotiation are simply assigned to `videoPlayer.src`, and adaptive
-bitrate/manifest parsing happens natively on the device. See `services/jellyfin/playback.ts`.
+Two earlier drafts of this README each got playback wrong in opposite directions — worth
+recording both since the real answer is easy to reinvent-and-reject a second time.
+
+The first draft assumed Shaka Player. The second draft "corrected" that to say playback was
+simple native-`<video>`-style delegation: `@amazon-devices/react-native-w3cmedia`'s
+`KeplerVideoView` wrapper with `src` assigned directly, no JS-side ABR/manifest parsing
+anywhere. That did work, but only partially: `KeplerVideoView`'s built-in `showControls`
+chrome never routed hardware remote events (play/pause, FF/RW, D-pad) to the player at all,
+and direct-played raw files failed to seek at the native layer
+(`DefaultMediaPlayer.cpp seekWithRate: Seek failed. Internal error 0`).
+
+The actual, current architecture (confirmed working end-to-end on the Vega Virtual Device):
+
+- `negotiatePlayback` (`services/jellyfin/playback.ts`) always requests transcoded HLS
+  (`EnableDirectPlay: false, EnableDirectStream: false`) — HLS's segment-based seeking works
+  reliably where raw-file byte-range seeking didn't.
+- `KeplerVideoSurfaceView` (the w3cmedia README's "pre-buffering mode": a manual
+  surface-handle handshake, `onSurfaceViewCreated`/`onSurfaceViewDestroyed`) replaces
+  `KeplerVideoView`, paired with a bare `VideoPlayer` instance and fully custom on-screen
+  controls (`screens/playback/PlaybackScreens.tsx`) — this is what makes hardware remote
+  events (via `useTVEventHandler`) actually reach the player.
+- A vendored, compiled Shaka Player (`src/w3cmedia/shakaplayer/`, MSE-based adaptive
+  streaming) drives HLS playback, wrapped by `ShakaPlayer.ts` and a set of DOM/URL/fetch
+  polyfills (`src/w3cmedia/polyfills/`) needed to run Shaka in Kepler's JS environment. This
+  whole `src/w3cmedia/` tree was ported from a separate, already-working Jellyfin-for-Vega
+  client rather than written from scratch, and is excluded from lint (`.eslintrc`
+  `ignorePatterns`) since it's vendored/compiled, not hand-written.
 
 ### Focus system
 
@@ -85,10 +108,37 @@ The scaffold now:
   and Metro's terminal reporter needs `util.styleText`, added after Node 20.11). Use
   `nvm install --lts && nvm alias default 'lts/*'` if you're on an older Node.
 
-Not yet verified: actually launching on a Vega Virtual Device or physical Fire TV device
-(`vega virtual-device start` + `vega run-app`) — the build artifacts exist but haven't been
-booted. That remains the reasonable next step to actually exercise Phase 1's UI/focus/playback
-behavior, none of which can be verified by `typecheck`/`lint` alone.
+**Verified on the Vega Virtual Device**: full app boot, sign-in (password and Quick Connect),
+navigation/focus, and playback including remote-control play/pause/seek — all confirmed
+working end-to-end via `vega virtual-device start` + `vega device install-app`/`launch-app`.
+Testing has been scoped to the Virtual Device only; a physical Fire TV/Fire Stick has not been
+tested against this codebase.
+
+### Native `URL`/`URLSearchParams` gotcha
+
+Worth documenting since it cost significant debugging time and isn't obvious from the code:
+Kepler's native `URL` implementation works correctly on its own — `new URL(...)`,
+`.searchParams` read off an instance, `.searchParams.set(key, value)` — all fine, and
+`index.js` does **not** polyfill or override `global.URL` (an earlier version did, as a
+workaround for an unrelated crash, but that override made Shaka Player's manifest/segment
+resolution hang forever on every `load()`).
+
+What *is* broken natively is the whole-string assignment `url.search = someString`. The
+`@jellyfin/sdk`'s generated `setSearchParams` helper (`node_modules/@jellyfin/sdk/lib/
+generated-client/common.js`) uses exactly that pattern for every GET request with query
+params, and it silently no-ops — the request goes out with no query string at all. This
+first surfaced as Quick Connect 400ing with `"secret field is required"` even though the
+code was passing a `secret` param. The fix, applied narrowly rather than patching the SDK:
+call sites that hit this (currently just Quick Connect's `getQuickConnectState`, in
+`screens/setup/UserListScreen.tsx`) bypass the generated method and build the request via
+`api.getUri(path, params)` + `api.axiosInstance.get(...)` instead, which serializes query
+params through axios rather than through the SDK's buggy helper. **Other SDK call sites
+that pass query params through the generated `getXxxApi(api).xxx({...})` methods may have
+the same silent-drop bug** — it just degrades gracefully there (e.g. a missing `Limit`
+returns unfiltered results instead of erroring), so it hasn't been hunted down everywhere.
+`global.URLSearchParams` is still polyfilled (`whatwg-url-without-unicode`) in `index.js`,
+since the standalone `new URLSearchParams(str)` constructor needed it — that part was
+confirmed fine on its own and isn't the cause of the above.
 
 ## Architecture map
 
@@ -104,7 +154,7 @@ behavior, none of which can be verified by `typecheck`/`lint` alone.
 | Home | `ui/main/HomePage.kt` | `src/screens/HomeScreen.tsx` |
 | Library browsing | `ui/components/CollectionFolderView.kt` | `src/screens/library/LibraryScreens.tsx`, `src/screens/FavoritesScreen.tsx` |
 | Detail pages | `ui/detail/{movie,episode,collection,series}/*`, `PersonPage.kt` | `src/screens/MediaItemScreen.tsx`, `src/screens/detail/`, `src/screens/SeriesOverviewScreen.tsx` |
-| Playback | `ui/playback/PlaybackViewModel.kt`, `util/TrackActivityPlaybackListener.kt` | `src/screens/playback/PlaybackScreens.tsx`, `src/services/jellyfin/playback.ts` |
+| Playback | `ui/playback/PlaybackViewModel.kt`, `util/TrackActivityPlaybackListener.kt` | `src/screens/playback/PlaybackScreens.tsx`, `src/services/jellyfin/playback.ts`, `src/w3cmedia/` (vendored Shaka Player + polyfills) |
 | Everything else (live TV, music, Seerr/Jellyseerr discover) | `ui/discover/`, live TV/music screens | not started — Phase 2/3 |
 
 ### Navigation
@@ -218,29 +268,29 @@ npm install
 npm run typecheck        # tsc --noEmit
 npm run lint
 
-npm run build:debug      # produces a .vpkg per architecture under build/<arch>-debug/
+npm run build:debug      # produces build/private/kepler/vegafin/undefined/vega/<arch>/Debug/vegafin_<arch>.vpkg
 npm run build:release    # release build
 
-# Not yet exercised by this scaffold, but the documented next step:
+# Run on the Vega Virtual Device (the only target this project has been tested against —
+# see the note above on physical Fire TV not being tested):
 vega virtual-device start
-vega run-app build/aarch64-debug/vegafin_aarch64.vpkg
+vega device install-app --directory . -b Debug
+vega device launch-app --directory .
 ```
 
-(The `.vpkg` filename derives from `package.json`'s `name` field, now `vegafin` after the
-rename from `wholphin-vega` — unverified in this environment since `build:debug` couldn't run
-here, so double check the actual filename build-vega produces once you run it.)
+(The `.vpkg` filename derives from `package.json`'s `name` field, `vegafin`.)
 
 ## Roadmap
 
-- **Phase 1** (done) — Home page rows, library grid/list browsing, Movie/Episode/
-  Collection/Person detail pages plus a binge-style Series overview, core playback
-  (`@amazon-devices/react-native-w3cmedia`'s native `VideoPlayer`, direct play/stream/
-  transcode negotiation, resume position, basic controls), and a focus-managed card/row
-  system built on native `TVFocusGuideView`/`hasTVPreferredFocus` (see
-  [Focus system](#focus-system)). Deliberately out of Phase 1's scope: user-configurable home
-  rows, alphabet-jump library browsing, trickplay, skip intro/outro, subtitle
-  search/download/delay, WebSocket remote-control commands — see the scope notes throughout
-  `src/services/jellyfin/` and `src/screens/`.
+- **Phase 1** (done, verified on the Vega Virtual Device) — Home page rows, library grid/list
+  browsing, Movie/Episode/Collection/Person detail pages plus a binge-style Series overview,
+  core playback (`KeplerVideoSurfaceView` + a vendored Shaka Player over always-transcoded
+  HLS, full remote-control input, auto-hiding custom controls — see the correction above),
+  Quick Connect + password sign-in, and a focus-managed card/row system built on native
+  `TVFocusGuideView`/`hasTVPreferredFocus` (see [Focus system](#focus-system)). Deliberately
+  out of Phase 1's scope: user-configurable home rows, alphabet-jump library browsing,
+  trickplay, skip intro/outro, subtitle search/download/delay, WebSocket remote-control
+  commands — see the scope notes throughout `src/services/jellyfin/` and `src/screens/`.
 - **Phase 2** — Settings screens, search, subtitle customization, trickplay, skip
   intro/outro, multi-server/user switching UI, PIN-lock routing.
 - **Phase 3** — Live TV guide + DVR, music playback (now playing/visualizer/lyrics),
@@ -263,7 +313,10 @@ src/
     HomeScreen.tsx, FavoritesScreen.tsx, SeriesOverviewScreen.tsx, MediaItemScreen.tsx
     library/                  FilteredCollection/ItemGrid/MoreHomeRow screens
     detail/                   Movie/Episode/Collection/Person detail, series/ (SeriesOverview parts)
-    playback/                 PlaybackScreen, PlaybackListScreen
+    playback/                 PlaybackScreen, PlaybackListScreen (KeplerVideoSurfaceView + ShakaPlayer)
+    setup/                     ServerList/UserList (password + Quick Connect)/PinEntry screens
+  w3cmedia/                   Vendored Shaka Player + DOM/URL/fetch polyfills - see the playback
+                               correction above. Excluded from lint (.eslintrc ignorePatterns).
   types/                      Ambient .d.ts augmentations (react-native-kepler/vector-icons gaps)
 index.js                       AppRegistry entry point (must be .js - see build note above)
 app.json                       App name; must match manifest.toml's main component id

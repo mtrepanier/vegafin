@@ -56,7 +56,6 @@ export type RootStackParamList = {
   Playback: {
     itemId: string;
     positionMs: number;
-    forceTranscoding?: boolean;
     shuffle?: boolean;
   };
   PlaybackList: {

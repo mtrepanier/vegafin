@@ -18,5 +18,11 @@
       "parser": "jsonc-eslint-parser"
     }
   ],
-  "ignorePatterns": ["babel.config.js", "metro.config.js", "jest.config.js", "package-lock.json"]
+  "ignorePatterns": [
+    "babel.config.js",
+    "metro.config.js",
+    "jest.config.js",
+    "package-lock.json",
+    "src/w3cmedia/**"
+  ]
 }
