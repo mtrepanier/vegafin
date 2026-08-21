@@ -97,6 +97,11 @@ export function ServerListScreen() {
         style={styles.list}
         data={servers}
         keyExtractor={(item) => item.server.id}
+        initialNumToRender={8}
+        windowSize={5}
+        maxToRenderPerBatch={8}
+        updateCellsBatchingPeriod={50}
+        removeClippedSubviews
         renderItem={({ item }) => (
           <Pressable
             onPress={() => navigation.navigate('UserList', { serverId: item.server.id })}

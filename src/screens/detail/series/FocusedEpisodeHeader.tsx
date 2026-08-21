@@ -24,12 +24,13 @@ export function FocusedEpisodeHeader({ series, episode }: Props) {
       : series.Name;
   const overview = episode?.Overview ?? series.Overview;
 
+  const scrimStyle = [StyleSheet.absoluteFill, { backgroundColor: colors.background, opacity: 0.45 }];
   return (
     <View>
       {backdropUri ? (
         <View style={styles.backdrop}>
           <Image source={{ uri: backdropUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: colors.background, opacity: 0.45 }]} />
+          <View style={scrimStyle} />
         </View>
       ) : null}
       <View style={styles.content}>

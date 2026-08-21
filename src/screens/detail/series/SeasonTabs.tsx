@@ -25,24 +25,26 @@ export function SeasonTabs({ seasons, selectedIndex, onSelect }: Props) {
       keyExtractor={(season, index) => season.Id ?? String(index)}
       showsHorizontalScrollIndicator={false}
       contentContainerStyle={styles.content}
+      initialNumToRender={8}
+      windowSize={5}
+      maxToRenderPerBatch={8}
+      updateCellsBatchingPeriod={50}
+      removeClippedSubviews
       renderItem={({ item, index }) => {
         const selected = index === selectedIndex;
         return (
           <Pressable onPress={() => onSelect(index)} hasTVPreferredFocus={selected}>
-            {({ focused }: PressableStateCallbackType) => (
-              <Text
-                style={[
-                  styles.tab,
-                  {
-                    borderColor: focused ? colors.border : 'transparent',
-                    backgroundColor: selected ? colors.primaryContainer : colors.surfaceVariant,
-                    color: selected ? colors.onPrimaryContainer : colors.onSurfaceVariant,
-                  },
-                ]}
-              >
-                {item.Name}
-              </Text>
-            )}
+            {({ focused }: PressableStateCallbackType) => {
+              const tabStyle = [
+                styles.tab,
+                {
+                  borderColor: focused ? colors.border : 'transparent',
+                  backgroundColor: selected ? colors.primaryContainer : colors.surfaceVariant,
+                  color: selected ? colors.onPrimaryContainer : colors.onSurfaceVariant,
+                },
+              ];
+              return <Text style={tabStyle}>{item.Name}</Text>;
+            }}
           </Pressable>
         );
       }}
