@@ -25,7 +25,7 @@ export interface SeasonEpisodeIds {
 }
 
 /** Identifies one of Phase 1's fixed home rows, for `MoreHomeRowScreen` to re-fetch paged. */
-export type HomeRowRef = { kind: 'continueWatching' } | { kind: 'recentlyAdded'; libraryId: string };
+export type HomeRowRef = { kind: 'continueWatching' } | { kind: 'nextUp' } | { kind: 'recentlyAdded'; libraryId: string };
 
 export type DrawerParamList = {
   Home: { id?: number } | undefined;

@@ -40,6 +40,19 @@ export function thumbImageUrl(item: BaseItemDto, width: number): string | undefi
   });
 }
 
+/**
+ * Landscape-oriented image for Continue Watching/Next Up cards: Thumb when the item actually
+ * has one, otherwise Primary. `thumbImageUrl`/`primaryImageUrl` always build a URL as long as
+ * the item has an Id - the SDK's `getItemImageUrl` doesn't check whether that image type's tag
+ * actually exists before constructing the request (unlike its own backdrop helper, which does)
+ * - so a naive `thumbImageUrl(item, w) ?? primaryImageUrl(item, w)` never falls back and just
+ * 404s for episodes, which almost never have their own Thumb image, only Primary. Checking
+ * `ImageTags.Thumb` directly here is what makes the fallback real.
+ */
+export function continueWatchingImageUrl(item: BaseItemDto, width: number): string | undefined {
+  return item.ImageTags?.Thumb ? thumbImageUrl(item, width) : primaryImageUrl(item, width);
+}
+
 /** `BaseItemPerson` (cast/crew credits) carries its image tag directly rather than an
  * `ImageTags` map, so it needs the by-id builder instead of `getItemImageUrl`. */
 export function personImageUrl(person: BaseItemPerson, width: number): string | undefined {

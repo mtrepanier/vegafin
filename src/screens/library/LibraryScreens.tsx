@@ -113,8 +113,12 @@ export function FilteredCollectionScreen() {
   if (!userId) {
     return null;
   }
+  // Keyed by the params that identify this grid's content (see MediaItemScreen.tsx's key
+  // comment for why): without it, navigating from one filtered collection to another reuses
+  // this component instance and its scroll/focus state instead of starting fresh.
   return (
     <LibraryGrid
+      key={`${itemId}-${parentType}`}
       title="Browse"
       fetchPage={fetchPage}
       sortable
@@ -153,6 +157,7 @@ export function ItemGridScreen() {
   }
   return (
     <LibraryGrid
+      key={`${parentId ?? ''}-${(includeItemTypes ?? []).join(',')}`}
       title={title}
       fetchPage={fetchPage}
       sortable
@@ -176,7 +181,8 @@ export function MoreHomeRowScreen() {
   if (!userId) {
     return null;
   }
-  return <LibraryGrid title={title} fetchPage={fetchPage} />;
+  const rowKey = row.kind === 'recentlyAdded' ? `${row.kind}-${row.libraryId}` : row.kind;
+  return <LibraryGrid key={rowKey} title={title} fetchPage={fetchPage} />;
 }
 
 const styles = StyleSheet.create({

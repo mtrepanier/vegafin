@@ -14,10 +14,13 @@ interface Props {
   onToggleWatched: () => void;
   /** Extra buttons (e.g. Shuffle on Series/Collection) rendered between Play and the toggles. */
   extra?: React.ReactNode;
+  /** See `ItemRow`'s `autoFocus` doc - false when some other element on the same page (e.g. an
+   * episode row) is the intended initial focus target instead of this Play button. */
+  autoFocus?: boolean;
 }
 
 /** Play/Resume + favorite/watched toggles, shared across every detail page (`ExpandablePlayButtons`). */
-export function DetailActionButtons({ item, onPlay, onToggleFavorite, onToggleWatched, extra }: Props) {
+export function DetailActionButtons({ item, onPlay, onToggleFavorite, onToggleWatched, extra, autoFocus = true }: Props) {
   const { colors } = useTheme();
   const resumeTicks = item.UserData?.PlaybackPositionTicks ?? 0;
   const resumeMs = resumeTicks > 0 ? ticksToMs(resumeTicks) : 0;
@@ -25,7 +28,7 @@ export function DetailActionButtons({ item, onPlay, onToggleFavorite, onToggleWa
 
   return (
     <View style={styles.row}>
-      <Pressable hasTVPreferredFocus onPress={onPlay}>
+      <Pressable hasTVPreferredFocus={autoFocus} onPress={onPlay}>
         {({ focused }: PressableStateCallbackType) => {
           const primaryButtonStyle = [
             styles.primaryButton,

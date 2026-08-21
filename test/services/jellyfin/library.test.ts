@@ -82,6 +82,15 @@ describe('fetchHomeRowPage', () => {
     expect(result.totalCount).toBe(15);
   });
 
+  it('builds a nextUp config', async () => {
+    mockFetchHomeRowItems.mockResolvedValue([{ Id: 'a' }]);
+
+    const page = fetchHomeRowPage('user-1', { kind: 'nextUp' });
+    await page(0, 5);
+
+    expect(mockFetchHomeRowItems).toHaveBeenCalledWith('user-1', { key: 'nextUp', kind: 'nextUp', title: '' }, 5);
+  });
+
   it('builds a recentlyAdded config carrying the libraryId', async () => {
     mockFetchHomeRowItems.mockResolvedValue([{ Id: 'a' }, { Id: 'b' }]);
 

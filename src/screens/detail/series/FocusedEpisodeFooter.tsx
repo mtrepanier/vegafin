@@ -20,6 +20,7 @@ export function FocusedEpisodeFooter({ episode, onPlay, onToggleFavorite, onTogg
         onPlay={() => onPlay(episode)}
         onToggleFavorite={() => onToggleFavorite(episode)}
         onToggleWatched={() => onToggleWatched(episode)}
+        autoFocus={false}
       />
     </View>
   );

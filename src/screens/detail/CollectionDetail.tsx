@@ -93,6 +93,7 @@ export function CollectionDetail({ itemId, navigation }: Props) {
         items={items}
         numColumns={6}
         header={header}
+        autoFocus={false}
         keyExtractor={(collectionItem) => collectionItem.Id ?? ''}
         renderItem={(collectionItem, _index, hasTVPreferredFocus, onFocus) => (
           <PosterCard

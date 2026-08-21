@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { PersonKind } from '@jellyfin/sdk/lib/generated-client/models/person-kind';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import { useTheme } from '../../theme/ThemeContext';
 import { layout } from '../../theme/types';
+import { usePinScrollToStart } from '../../focus/usePinScrollToStart';
 import { useCurrentUser } from '../../services/storage/ServerRepositoryContext';
 import { fetchItem, fetchSimilarItems, setFavorite, setWatched } from '../../services/jellyfin/detail';
 import { backdropImageUrl } from '../../services/jellyfin/images';
@@ -22,6 +23,8 @@ interface Props {
 // composable for those in this port; same layout applies cleanly).
 export function MovieDetail({ itemId, navigation }: Props) {
   const { colors } = useTheme();
+  const scrollRef = useRef<ScrollView>(null);
+  usePinScrollToStart(() => scrollRef.current?.scrollTo({ y: 0, animated: false }));
   const currentUser = useCurrentUser();
   const userId = currentUser?.user.id;
   const [item, setItem] = useState<BaseItemDto | null>(null);
@@ -69,7 +72,7 @@ export function MovieDetail({ itemId, navigation }: Props) {
 
   const scrimStyle = [StyleSheet.absoluteFill, { backgroundColor: colors.background, opacity: 0.45 }];
   return (
-    <ScrollView style={{ backgroundColor: colors.background }}>
+    <ScrollView ref={scrollRef} focusItemAlignment="start" style={{ backgroundColor: colors.background }}>
       {backdropUri ? (
         <View style={styles.backdrop}>
           <Image source={{ uri: backdropUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
@@ -99,8 +102,8 @@ export function MovieDetail({ itemId, navigation }: Props) {
         {item.Overview ? <Text style={[styles.overview, { color: colors.onSurface }]}>{item.Overview}</Text> : null}
       </View>
 
-      <CastRow people={cast} navigation={navigation} />
-      <PosterRow title="More Like This" items={similar} navigation={navigation} />
+      <CastRow people={cast} navigation={navigation} autoFocus={false} />
+      <PosterRow title="More Like This" items={similar} navigation={navigation} autoFocus={false} />
     </ScrollView>
   );
 }

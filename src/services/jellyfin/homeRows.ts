@@ -14,10 +14,18 @@ const RECENTLY_ADDED_COLLECTION_TYPES = new Set<string>([CollectionType.Movies, 
 
 export type HomeRowConfig =
   | { key: string; kind: 'continueWatching'; title: string }
+  | { key: string; kind: 'nextUp'; title: string }
   | { key: string; kind: 'recentlyAdded'; title: string; libraryId: string };
 
 export function homeRowRef(config: HomeRowConfig): HomeRowRef {
-  return config.kind === 'continueWatching' ? { kind: 'continueWatching' } : { kind: 'recentlyAdded', libraryId: config.libraryId };
+  switch (config.kind) {
+    case 'continueWatching':
+      return { kind: 'continueWatching' };
+    case 'nextUp':
+      return { kind: 'nextUp' };
+    case 'recentlyAdded':
+      return { kind: 'recentlyAdded', libraryId: config.libraryId };
+  }
 }
 
 export async function fetchUserLibraries(userId: string): Promise<BaseItemDto[]> {
@@ -26,13 +34,20 @@ export async function fetchUserLibraries(userId: string): Promise<BaseItemDto[]>
 }
 
 /**
- * Fixed default row layout: Continue Watching + Next Up combined, then one Recently Added row
- * per movie/TV library - mirrors `HomeSettingsService.createDefault()` without the
- * user-configurable row settings UI around it (that's Phase 2 "Settings screens").
+ * Fixed default row layout: Continue Watching, then Next Up, then one Recently Added row per
+ * movie/TV library - mirrors `HomeSettingsService.createDefault()` without the
+ * user-configurable row settings UI around it (that's Phase 2 "Settings screens"). Kept as two
+ * separate rows (matching AmbientFlare/astra-tv, a separate Jellyfin-for-Vega client tested on
+ * real Fire TV hardware) rather than merged into one - an earlier version combined them via a
+ * client-side SeriesId dedup, but that just meant genuinely in-progress items got crowded out
+ * whenever a same-series "next up" entry happened to load first.
  */
 export async function fetchDefaultHomeRowConfigs(userId: string): Promise<HomeRowConfig[]> {
   const libraries = await fetchUserLibraries(userId);
-  const configs: HomeRowConfig[] = [{ key: 'continueWatching', kind: 'continueWatching', title: 'Continue Watching' }];
+  const configs: HomeRowConfig[] = [
+    { key: 'continueWatching', kind: 'continueWatching', title: 'Continue Watching' },
+    { key: 'nextUp', kind: 'nextUp', title: 'Next Up' },
+  ];
 
   for (const library of libraries) {
     if (!library.Id || !library.CollectionType || !RECENTLY_ADDED_COLLECTION_TYPES.has(library.CollectionType)) {
@@ -49,20 +64,19 @@ export async function fetchDefaultHomeRowConfigs(userId: string): Promise<HomeRo
   return configs;
 }
 
-/** Resume-in-progress items merged with "next up" episodes, mirroring `LatestNextUpService.buildCombined()`. */
-async function fetchContinueWatchingRow(userId: string, limit: number): Promise<BaseItemDto[]> {
-  const api = jellyfinClient.api;
-  const [resume, nextUp] = await Promise.all([
-    getItemsApi(api).getResumeItems({ userId, limit }),
-    getTvShowsApi(api).getNextUp({ userId, limit }),
-  ]);
+/** In-progress (resumable) items - movies/episodes with a saved playback position. */
+async function fetchResumeRow(userId: string, limit: number): Promise<BaseItemDto[]> {
+  const { data } = await getItemsApi(jellyfinClient.api).getResumeItems({ userId, limit });
+  return data.Items ?? [];
+}
 
-  const resumeItems = resume.data.Items ?? [];
-  const nextUpItems = nextUp.data.Items ?? [];
-  const resumedSeriesIds = new Set(resumeItems.map((item) => item.SeriesId).filter(Boolean));
-  const combined = [...resumeItems, ...nextUpItems.filter((item) => !resumedSeriesIds.has(item.SeriesId))];
-
-  return combined.slice(0, limit);
+/** The next unwatched episode for each in-progress series - not filtered against Continue
+ * Watching's own results, matching AmbientFlare/astra-tv (a separate Jellyfin-for-Vega client
+ * tested on real Fire TV hardware): the server's own `/Shows/NextUp` already excludes a series
+ * whose next episode is the one actively being resumed. */
+async function fetchNextUpRow(userId: string, limit: number): Promise<BaseItemDto[]> {
+  const { data } = await getTvShowsApi(jellyfinClient.api).getNextUp({ userId, limit });
+  return data.Items ?? [];
 }
 
 async function fetchRecentlyAddedRow(userId: string, libraryId: string, limit: number): Promise<BaseItemDto[]> {
@@ -73,7 +87,9 @@ async function fetchRecentlyAddedRow(userId: string, libraryId: string, limit: n
 export async function fetchHomeRowItems(userId: string, config: HomeRowConfig, limit = ROW_LIMIT): Promise<BaseItemDto[]> {
   switch (config.kind) {
     case 'continueWatching':
-      return fetchContinueWatchingRow(userId, limit);
+      return fetchResumeRow(userId, limit);
+    case 'nextUp':
+      return fetchNextUpRow(userId, limit);
     case 'recentlyAdded':
       return fetchRecentlyAddedRow(userId, config.libraryId, limit);
   }

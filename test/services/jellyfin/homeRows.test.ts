@@ -29,6 +29,10 @@ describe('homeRowRef', () => {
     expect(homeRowRef({ key: 'continueWatching', kind: 'continueWatching', title: 'x' })).toEqual({ kind: 'continueWatching' });
   });
 
+  it('maps a nextUp config with no extra fields', () => {
+    expect(homeRowRef({ key: 'nextUp', kind: 'nextUp', title: 'x' })).toEqual({ kind: 'nextUp' });
+  });
+
   it('maps a recentlyAdded config carrying its libraryId', () => {
     expect(homeRowRef({ key: 'recentlyAdded:lib-1', kind: 'recentlyAdded', title: 'x', libraryId: 'lib-1' })).toEqual({
       kind: 'recentlyAdded',
@@ -50,10 +54,13 @@ describe('fetchUserLibraries', () => {
 });
 
 describe('fetchDefaultHomeRowConfigs', () => {
-  it('always leads with a continueWatching row', async () => {
+  it('always leads with continueWatching then nextUp rows', async () => {
     mockGetUserViews.mockResolvedValue({ data: { Items: [] } });
     const configs = await fetchDefaultHomeRowConfigs('user-1');
-    expect(configs[0]).toEqual({ key: 'continueWatching', kind: 'continueWatching', title: 'Continue Watching' });
+    expect(configs.slice(0, 2)).toEqual([
+      { key: 'continueWatching', kind: 'continueWatching', title: 'Continue Watching' },
+      { key: 'nextUp', kind: 'nextUp', title: 'Next Up' },
+    ]);
   });
 
   it('adds one recentlyAdded row per movie/tvshows library, skipping other collection types', async () => {
@@ -71,6 +78,7 @@ describe('fetchDefaultHomeRowConfigs', () => {
 
     expect(configs).toEqual([
       { key: 'continueWatching', kind: 'continueWatching', title: 'Continue Watching' },
+      { key: 'nextUp', kind: 'nextUp', title: 'Next Up' },
       { key: 'recentlyAdded:movies-1', kind: 'recentlyAdded', title: 'Latest Movies', libraryId: 'movies-1' },
       { key: 'recentlyAdded:shows-1', kind: 'recentlyAdded', title: 'Latest TV Shows', libraryId: 'shows-1' },
     ]);
@@ -87,52 +95,51 @@ describe('fetchDefaultHomeRowConfigs', () => {
     });
 
     const configs = await fetchDefaultHomeRowConfigs('user-1');
-    expect(configs).toEqual([{ key: 'continueWatching', kind: 'continueWatching', title: 'Continue Watching' }]);
+    expect(configs).toEqual([
+      { key: 'continueWatching', kind: 'continueWatching', title: 'Continue Watching' },
+      { key: 'nextUp', kind: 'nextUp', title: 'Next Up' },
+    ]);
   });
 
   it('trims the title when the library has no Name', async () => {
     mockGetUserViews.mockResolvedValue({ data: { Items: [{ Id: 'lib-1', CollectionType: 'movies' }] } });
     const configs = await fetchDefaultHomeRowConfigs('user-1');
-    expect(configs[1].title).toBe('Latest');
+    expect(configs[2].title).toBe('Latest');
   });
 });
 
 describe('fetchHomeRowItems - continueWatching', () => {
-  it('combines resume items with next-up episodes', async () => {
+  it('returns resume items directly, without touching next-up', async () => {
     mockGetResumeItems.mockResolvedValue({ data: { Items: [{ Id: 'resume-1', SeriesId: 'series-a' }] } });
+
+    const items = await fetchHomeRowItems('user-1', { key: 'continueWatching', kind: 'continueWatching', title: '' }, 20);
+
+    expect(items).toEqual([{ Id: 'resume-1', SeriesId: 'series-a' }]);
+    expect(mockGetResumeItems).toHaveBeenCalledWith({ userId: 'user-1', limit: 20 });
+    expect(mockGetNextUp).not.toHaveBeenCalled();
+  });
+
+  it('defaults to an empty array when Items is missing', async () => {
+    mockGetResumeItems.mockResolvedValue({ data: {} });
+    const items = await fetchHomeRowItems('user-1', { key: 'continueWatching', kind: 'continueWatching', title: '' }, 20);
+    expect(items).toEqual([]);
+  });
+});
+
+describe('fetchHomeRowItems - nextUp', () => {
+  it('returns next-up items directly, without touching resume', async () => {
     mockGetNextUp.mockResolvedValue({ data: { Items: [{ Id: 'nextup-1', SeriesId: 'series-b' }] } });
 
-    const items = await fetchHomeRowItems('user-1', { key: 'continueWatching', kind: 'continueWatching', title: '' }, 20);
+    const items = await fetchHomeRowItems('user-1', { key: 'nextUp', kind: 'nextUp', title: '' }, 20);
 
-    expect(items).toEqual([
-      { Id: 'resume-1', SeriesId: 'series-a' },
-      { Id: 'nextup-1', SeriesId: 'series-b' },
-    ]);
+    expect(items).toEqual([{ Id: 'nextup-1', SeriesId: 'series-b' }]);
+    expect(mockGetNextUp).toHaveBeenCalledWith({ userId: 'user-1', limit: 20 });
+    expect(mockGetResumeItems).not.toHaveBeenCalled();
   });
 
-  it('drops next-up episodes whose series already has a resume-in-progress item', async () => {
-    mockGetResumeItems.mockResolvedValue({ data: { Items: [{ Id: 'resume-1', SeriesId: 'series-a' }] } });
-    mockGetNextUp.mockResolvedValue({
-      data: { Items: [{ Id: 'nextup-1', SeriesId: 'series-a' }, { Id: 'nextup-2', SeriesId: 'series-b' }] },
-    });
-
-    const items = await fetchHomeRowItems('user-1', { key: 'continueWatching', kind: 'continueWatching', title: '' }, 20);
-
-    expect(items.map((i) => i.Id)).toEqual(['resume-1', 'nextup-2']);
-  });
-
-  it('caps the combined list at the requested limit', async () => {
-    mockGetResumeItems.mockResolvedValue({ data: { Items: [{ Id: 'r1' }, { Id: 'r2' }] } });
-    mockGetNextUp.mockResolvedValue({ data: { Items: [{ Id: 'n1' }, { Id: 'n2' }] } });
-
-    const items = await fetchHomeRowItems('user-1', { key: 'continueWatching', kind: 'continueWatching', title: '' }, 3);
-    expect(items).toHaveLength(3);
-  });
-
-  it('defaults both sources to an empty array when Items is missing', async () => {
-    mockGetResumeItems.mockResolvedValue({ data: {} });
+  it('defaults to an empty array when Items is missing', async () => {
     mockGetNextUp.mockResolvedValue({ data: {} });
-    const items = await fetchHomeRowItems('user-1', { key: 'continueWatching', kind: 'continueWatching', title: '' }, 20);
+    const items = await fetchHomeRowItems('user-1', { key: 'nextUp', kind: 'nextUp', title: '' }, 20);
     expect(items).toEqual([]);
   });
 });

@@ -14,4 +14,20 @@ declare module 'react-native' {
   interface PressableStateCallbackType {
     focused: boolean;
   }
+
+  // Kepler's ScrollView adds TV-focus-scroll controls (ScrollViewPropsKepler in
+  // @amazon-devices/react-native-kepler's ScrollView.d.ts) absent from stock RN's types.
+  // `focusItemAlignment` controls where a newly-focused descendant lands after the native TV
+  // focus engine auto-scrolls it into view - stock RN's undocumented platform default behaves
+  // like 'center', which opens screens/rows scrolled past their start; 'start' pins it flush.
+  // FlatList forwards unrecognized props straight through to its internal ScrollView, so this
+  // applies there too even though VirtualizedListProps doesn't otherwise know about it.
+  interface ScrollViewProps {
+    focusItemAlignment?: 'start' | 'center' | 'end';
+  }
+  // ItemT must stay to match FlatListProps's own generic arity for declaration merging to apply.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars, no-unused-vars
+  interface FlatListProps<ItemT> {
+    focusItemAlignment?: 'start' | 'center' | 'end';
+  }
 }

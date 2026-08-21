@@ -56,9 +56,9 @@ export function fetchHomeRowPage(userId: string, row: HomeRowRef): FetchPage<Bas
   // itself (Kotlin's `GetResumeItemsRequestHandler`/`GetNextUpRequestHandler` just page the
   // same call) - refetch with a larger limit sized to the requested page instead.
   const config: HomeRowConfig =
-    row.kind === 'continueWatching'
-      ? { key: 'continueWatching', kind: 'continueWatching', title: '' }
-      : { key: `recentlyAdded:${row.libraryId}`, kind: 'recentlyAdded', title: '', libraryId: row.libraryId };
+    row.kind === 'recentlyAdded'
+      ? { key: `recentlyAdded:${row.libraryId}`, kind: 'recentlyAdded', title: '', libraryId: row.libraryId }
+      : { key: row.kind, kind: row.kind, title: '' };
 
   return async (startIndex, limit): Promise<PageResult<BaseItemDto>> => {
     const items = await fetchHomeRowItems(userId, config, startIndex + limit);

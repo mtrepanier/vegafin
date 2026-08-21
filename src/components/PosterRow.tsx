@@ -12,11 +12,13 @@ interface Props {
   items: BaseItemDto[];
   navigation: AppNavigationProp<keyof DrawerParamList>;
   metrics?: CardMetrics;
+  /** See `ItemRow`'s `autoFocus` doc - false on every page that already has a more authoritative initial focus target (the Play button). */
+  autoFocus?: boolean;
 }
 
 /** A row of item cards that navigates via `navigateToItem` on press - the common case reused
  * by "More Like This"/similar-items/person-credits rows across the detail pages. */
-export function PosterRow({ title, items, navigation, metrics = layout.poster }: Props) {
+export function PosterRow({ title, items, navigation, metrics = layout.poster, autoFocus = true }: Props) {
   if (items.length === 0) {
     return null;
   }
@@ -24,6 +26,7 @@ export function PosterRow({ title, items, navigation, metrics = layout.poster }:
     <ItemRow
       title={title}
       items={items}
+      autoFocus={autoFocus}
       keyExtractor={(item) => item.Id ?? ''}
       renderItem={(item, _index, hasTVPreferredFocus, onFocus) => (
         <PosterCard
