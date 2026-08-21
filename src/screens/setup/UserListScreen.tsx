@@ -5,6 +5,7 @@ import { getUserApi } from '@jellyfin/sdk/lib/utils/api/user-api';
 import { getQuickConnectApi } from '@jellyfin/sdk/lib/utils/api/quick-connect-api';
 import type { Api } from '@jellyfin/sdk/lib/api';
 import type { UserDto } from '@jellyfin/sdk/lib/generated-client/models/user-dto';
+import type { QuickConnectResult } from '@jellyfin/sdk/lib/generated-client/models/quick-connect-result';
 import { jellyfinClient } from '../../services/jellyfin/JellyfinClient';
 import { serverRepository } from '../../services/storage/ServerRepository';
 import { useTheme } from '../../theme/ThemeContext';
@@ -14,6 +15,22 @@ import type { SetupStackParamList } from '../../navigation/types';
 type Route = RouteProp<SetupStackParamList, 'UserList'>;
 
 const QUICK_CONNECT_POLL_MS = 2000;
+
+/** Calls GET /QuickConnect/Connect?secret=... directly via `api.getUri()`/`api.axiosInstance`
+ * instead of the SDK's generated `getQuickConnectApi(api).getQuickConnectState()`. That
+ * generated helper builds its query string via `url.search = searchParams.toString()` on a
+ * native `URL` instance, and that whole-string assignment silently no-ops here (confirmed:
+ * the request went out as bare `/QuickConnect/Connect` with no query string at all, and the
+ * server correctly 400'd with "secret field is required"). `api.getUri()` builds the same
+ * query string through axios's own serialization instead, which doesn't hit this - it's the
+ * same call pattern already used for stream URLs elsewhere in this codebase. */
+async function getQuickConnectState(api: Api, secret: string): Promise<QuickConnectResult> {
+  const url = api.getUri('/QuickConnect/Connect', { secret });
+  const { data } = await api.axiosInstance.get<QuickConnectResult>(url, {
+    headers: { Authorization: api.authorizationHeader },
+  });
+  return data;
+}
 
 /** Builds the local JellyfinUser record and commits the session, shared by both the
  * password and Quick Connect sign-in paths. */
@@ -71,9 +88,11 @@ function QuickConnectPanel({
         secretRef.current = data.Secret;
         setCode(data.Code);
       })
-      .catch(() => {
+      .catch((initiateError) => {
+        console.error('[VegaFin] Quick Connect initiate failed:', initiateError);
         if (!cancelledRef.current) {
-          onError('Could not start Quick Connect - is it enabled on this server?');
+          const detail = initiateError instanceof Error ? initiateError.message : String(initiateError);
+          onError(`Could not start Quick Connect: ${detail}`);
         }
       });
 
@@ -82,7 +101,7 @@ function QuickConnectPanel({
         return;
       }
       try {
-        const { data } = await getQuickConnectApi(api).getQuickConnectState({ secret: secretRef.current });
+        const data = await getQuickConnectState(api, secretRef.current);
         if (!data.Authenticated || cancelledRef.current) {
           return;
         }
@@ -98,10 +117,20 @@ function QuickConnectPanel({
           throw new Error('Server did not return an access token');
         }
         await signInUser(server, auth.User, auth.AccessToken);
-      } catch {
+      } catch (pollError) {
+        const axiosLike = pollError as { config?: { url?: string }; response?: { status?: number; data?: unknown } };
+        console.error(
+          '[VegaFin] Quick Connect poll failed:',
+          pollError,
+          'url:', axiosLike?.config?.url,
+          'status:', axiosLike?.response?.status,
+          'body:', JSON.stringify(axiosLike?.response?.data),
+        );
         if (!cancelledRef.current) {
           setAuthenticating(false);
-          onError('Quick Connect sign-in failed');
+          const detail = pollError instanceof Error ? pollError.message : String(pollError);
+          const bodyText = JSON.stringify(axiosLike?.response?.data);
+          onError(`Quick Connect sign-in failed: ${detail} | url: ${axiosLike?.config?.url} | body: ${bodyText}`);
         }
       }
     }, QUICK_CONNECT_POLL_MS);

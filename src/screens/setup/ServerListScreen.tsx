@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useNavigation } from '@amazon-devices/react-navigation__native';
 import type { NativeStackNavigationProp } from '@amazon-devices/react-navigation__native-stack';
+import { getSystemApi } from '@jellyfin/sdk/lib/utils/api/system-api';
+import { jellyfinClient } from '../../services/jellyfin/JellyfinClient';
+import { getServerUrlCandidates } from '../../services/jellyfin/serverUrl';
 import { serverRepository } from '../../services/storage/ServerRepository';
 import { useTheme } from '../../theme/ThemeContext';
 import { generateId } from '../../util/uuid';
@@ -12,20 +15,61 @@ export function ServerListScreen() {
   const { colors } = useTheme();
   const navigation = useNavigation<NativeStackNavigationProp<SetupStackParamList, 'ServerList'>>();
   const [url, setUrl] = useState('');
+  const [connecting, setConnecting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const servers = serverRepository.listServers();
 
   const addServer = async () => {
-    if (!url.trim()) return;
-    const server = {
-      id: generateId(),
-      name: null,
-      url: url.trim(),
-      version: null,
-      lastUsed: new Date().toISOString(),
-    };
-    await serverRepository.addAndChangeServer(server);
-    navigation.navigate('UserList', { serverId: server.id });
-    setUrl('');
+    if (!url.trim() || connecting) return;
+    setError(null);
+    setConnecting(true);
+    try {
+      // The user's typed URL is never stored as-is: a schemeless or mixed-case one breaks the
+      // native media pipeline later even though JS-side API calls tolerate it fine (see
+      // serverUrl.ts). Probe candidates against the real server and persist whichever answers.
+      const candidates = getServerUrlCandidates(url);
+      if (!candidates.length) {
+        throw new Error('Enter a server address.');
+      }
+
+      let resolvedUrl: string | null = null;
+      let serverName: string | null = null;
+      let serverVersion: string | null = null;
+      let firstError: unknown;
+
+      for (const candidate of candidates) {
+        try {
+          const api = jellyfinClient.update(candidate, null);
+          if (!api) continue;
+          const { data } = await getSystemApi(api).getPublicSystemInfo();
+          resolvedUrl = candidate;
+          serverName = data.ServerName ?? null;
+          serverVersion = data.Version ?? null;
+          break;
+        } catch (e) {
+          firstError = firstError ?? e;
+        }
+      }
+
+      if (!resolvedUrl) {
+        throw firstError instanceof Error ? firstError : new Error('Unable to reach the server.');
+      }
+
+      const server = {
+        id: generateId(),
+        name: serverName,
+        url: resolvedUrl,
+        version: serverVersion,
+        lastUsed: new Date().toISOString(),
+      };
+      await serverRepository.addAndChangeServer(server);
+      navigation.navigate('UserList', { serverId: server.id });
+      setUrl('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to reach the server.');
+    } finally {
+      setConnecting(false);
+    }
   };
 
   return (
@@ -40,12 +84,13 @@ export function ServerListScreen() {
         autoCorrect={false}
         style={[styles.input, { borderColor: colors.border, color: colors.onSurface }]}
       />
+      {error ? <Text style={{ color: colors.error }}>{error}</Text> : null}
       <Pressable
         hasTVPreferredFocus
         onPress={addServer}
         style={[styles.button, { backgroundColor: colors.primary }]}
       >
-        <Text style={{ color: colors.onPrimary }}>Connect</Text>
+        {connecting ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={{ color: colors.onPrimary }}>Connect</Text>}
       </Pressable>
 
       <FlatList

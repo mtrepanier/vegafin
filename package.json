@@ -39,7 +39,9 @@
     "@amazon-devices/kepler-graphics": "~2.4.0",
 
     "@jellyfin/sdk": "^0.13.0",
-    "whatwg-url-without-unicode": "8.0.0-3"
+    "whatwg-url-without-unicode": "8.0.0-3",
+    "base-64": "^1.0.0",
+    "xmldom": "^0.6.0"
   },
   "engines": {
     "node": ">=20"

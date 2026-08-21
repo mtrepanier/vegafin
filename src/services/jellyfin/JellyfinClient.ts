@@ -1,5 +1,6 @@
 import { Jellyfin } from '@jellyfin/sdk';
 import type { Api } from '@jellyfin/sdk/lib/api';
+import { normalizeServerUrl } from './serverUrl';
 
 /**
  * Thin wrapper around the official @jellyfin/sdk, playing the role of the injected
@@ -34,8 +35,14 @@ class JellyfinClient {
       this._api = null;
       return null;
     }
-    if (!this._api || this._api.basePath !== serverUrl) {
-      this._api = this.jellyfin.createApi(serverUrl);
+    // Defensive normalization for servers stored before ServerListScreen started resolving a
+    // real scheme at add time (see serverUrl.ts): a schemeless base URL still works for
+    // JS-side API calls but silently breaks the native media pipeline later, so default to
+    // https rather than let it through unnormalized. Doesn't re-probe http/https like the
+    // add-server flow does - that only matters for already-stored, already-broken data.
+    const resolvedUrl = /^https?:\/\//i.test(serverUrl.trim()) ? normalizeServerUrl(serverUrl) : `https://${normalizeServerUrl(serverUrl)}`;
+    if (!this._api || this._api.basePath !== resolvedUrl) {
+      this._api = this.jellyfin.createApi(resolvedUrl);
     }
     this._api.accessToken = accessToken ?? '';
     return this._api;

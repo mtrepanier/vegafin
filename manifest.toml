@@ -7,9 +7,6 @@
 # After adding/removing a dependency that ships a Vega native module, rebuild once to let
 # autolinking refresh this section rather than editing it by hand.
 #
-# Add [[wants.service]] entries as Phase 1+ starts using capabilities that aren't plain npm
-# dependencies (e.g. com.amazon.media.server for playback); none are needed yet.
-#
 schema-version = 1
 
 [package]
@@ -20,6 +17,54 @@ version = "0.0.1"
 [os.version]
 min = "1.2"
 target = "1.2"
+
+# Playback services, not tied to any npm dependency so not autolinked - required to reach
+# the OS's media pipeline at all. Missing these is why direct-play failed with
+# "PlayerService is not available", BufferQueueError, and mediaxform_create failed: the app
+# was never granted access to the services those errors name. Confirmed against
+# AmbientFlare/astra-tv, a separate Jellyfin-for-Vega client that plays video successfully
+# on real Fire TV hardware and declares this same service set.
+[[wants.service]]
+id = "com.amazon.w3cmedia.service"
+
+[[wants.service]]
+id = "com.amazon.audio.service"
+
+[[wants.service]]
+id = "com.amazon.inputmethod.service"
+
+[[wants.service]]
+id = "com.amazon.inputd.service"
+
+[[wants.service]]
+id = "com.amazon.media.server"
+
+[[wants.service]]
+id = "com.amazon.mediametrics.service"
+
+[[wants.service]]
+id = "com.amazon.media.playersession.service"
+
+[[wants.service]]
+id = "com.amazon.mediabuffer.service"
+
+[[wants.service]]
+id = "com.amazon.mediatransform.service"
+
+[[wants.service]]
+id = "com.amazon.gipc.uuid.*"
+
+[[wants.service]]
+id = "com.amazon.audio.stream"
+
+[[wants.service]]
+id = "com.amazon.audio.control"
+
+[[wants.service]]
+id = "com.amazon.audio.system"
+
+[[wants.service]]
+id = "com.amazon.network.service"
 
 [needs]
 [[needs.module]]
@@ -33,6 +78,9 @@ id = "/com.amazon.vega.os@IVega_1_2"
 # Required for talking to a Jellyfin server at all.
 [[needs.module]]
 id = "/com.amazon.kepler.net.net_manager@INetManager"
+
+[[needs.privilege]]
+id = "com.amazon.network.privilege.net-info"
 
 [[needs.module]]
 id = "/com.amazon.kepler.kepler_file_system_0@IKeplerFileSystem_0"
@@ -99,4 +147,4 @@ id = "/com.amazon.kepler.navigation__routers_8@INavigation__Routers_0"
 id = "com.vegafin.app.main"
 runtime-module = "/com.amazon.kepler.runtime.react_native_kepler_4@IReactNativeKepler_0"
 launch-type = "singleton"
-categories = ["com.amazon.category.main"]
+categories = ["com.amazon.category.main", "com.amazon.category.kepler.media"]

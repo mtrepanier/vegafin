@@ -77,13 +77,18 @@ export interface PlaybackSource {
 export interface NegotiatePlaybackOptions {
   audioStreamIndex?: number;
   subtitleStreamIndex?: number;
-  forceTranscoding?: boolean;
   positionMs?: number;
 }
 
-/** Three-tier direct play -> direct stream -> transcode negotiation, mirroring
- * `PlaybackViewModel.changeStreams()`. Call again with `forceTranscoding: true` as a fallback
- * if playback of a direct-play/-stream URL fails at runtime. */
+/** Always transcodes to HLS, mirroring `PlaybackViewModel.changeStreams()`'s transcode tier but
+ * skipping the direct-play/-stream tiers entirely: seeking into a direct-played raw file fails
+ * on this platform (`DefaultMediaPlayer seekWithRate ... Internal error 0`, MPB code 50004 -
+ * confirmed from device logs), while HLS's segment-based seeking works reliably. Confirmed
+ * against AmbientFlare/astra-tv, a separate Jellyfin-for-Vega client that made the same choice
+ * for the same reason. `AllowVideoStreamCopy`/`AllowAudioStreamCopy` stay enabled so the server
+ * can still avoid re-encoding compatible streams *within* the HLS package - that's a pure
+ * efficiency win and doesn't reintroduce the raw-file seek problem, since the output is still
+ * HLS-segmented either way. */
 export async function negotiatePlayback(
   userId: string,
   itemId: string,
@@ -100,11 +105,11 @@ export async function negotiatePlayback(
       SubtitleStreamIndex: options.subtitleStreamIndex,
       StartTimeTicks: options.positionMs ? msToTicks(options.positionMs) : undefined,
       MaxStreamingBitrate: DEVICE_PROFILE.MaxStreamingBitrate,
-      EnableDirectPlay: !options.forceTranscoding,
-      EnableDirectStream: !options.forceTranscoding,
+      EnableDirectPlay: false,
+      EnableDirectStream: false,
       EnableTranscoding: true,
-      AllowVideoStreamCopy: !options.forceTranscoding,
-      AllowAudioStreamCopy: !options.forceTranscoding,
+      AllowVideoStreamCopy: true,
+      AllowAudioStreamCopy: true,
     },
   });
 
@@ -116,26 +121,10 @@ export async function negotiatePlayback(
 
   const mediaStreams = source.MediaStreams ?? [];
 
-  if (source.SupportsDirectPlay && source.Path) {
-    // Kepler's native media pipeline determines the container from the URL's file extension
-    // rather than sniffing content or trusting the `container` query param, so the extensionless
-    // `/stream` route (which works fine on players like ExoPlayer/AVPlayer) fails there with
-    // MEDIA_ERR_SRC_NOT_SUPPORTED. `/stream.{container}` is the server's own documented route for
-    // exactly this case.
-    const container = source.Container ?? 'mp4';
-    const url = api.getUri(`/Videos/${itemId}/stream.${container}`, {
-      static: true,
-      mediaSourceId: source.Id,
-      playSessionId,
-      api_key: api.accessToken,
-    });
-    return { url, playMethod: PlayMethod.DirectPlay, mediaSourceId: source.Id, playSessionId, mediaStreams };
-  }
-
   if (source.TranscodingUrl) {
     return {
       url: api.getUri(source.TranscodingUrl),
-      playMethod: source.SupportsDirectStream ? PlayMethod.DirectStream : PlayMethod.Transcode,
+      playMethod: PlayMethod.Transcode,
       mediaSourceId: source.Id,
       playSessionId,
       mediaStreams,
