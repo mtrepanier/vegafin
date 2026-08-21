@@ -3,6 +3,6 @@
   "compilerOptions": {
     "types": ["jest", "@amazon-devices/react-native-kepler"]
   },
-  "include": ["src", "index.js"],
+  "include": ["src", "index.js", "test"],
   "exclude": ["node_modules"]
 }
