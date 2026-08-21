@@ -267,6 +267,7 @@ Then, from this directory:
 npm install
 npm run typecheck        # tsc --noEmit
 npm run lint
+npm run test             # jest — see Testing below
 
 npm run build:debug      # produces build/private/kepler/vegafin/undefined/vega/<arch>/Debug/vegafin_<arch>.vpkg
 npm run build:release    # release build
@@ -279,6 +280,30 @@ vega device launch-app --directory .
 ```
 
 (The `.vpkg` filename derives from `package.json`'s `name` field, `vegafin`.)
+
+### Testing
+
+`npm run test` runs the Jest suite under `test/` (jest requires tests to live there, not
+colocated with `src/` — see `jest.config.json`'s `testRegex`). Coverage is intentionally
+scoped to the **service/business-logic layer**, not screens or components:
+
+- Auth/session (`ServerRepository`), server URL scheme resolution/probing (`serverUrl`,
+  `JellyfinClient`), the Jellyfin API layer (`playback` negotiation + progress reporting,
+  `homeRows`, `library`, `detail`, `images`, the `ItemPager` pagination hook), theming
+  (`ThemeContext`), and the focus system's `useLastFocusedIndex` hook.
+- Deliberately **not** covered: `HomeScreen`/library/detail screens, `PlaybackScreens.tsx`,
+  navigation, and the setup screens. These are tightly coupled to native Kepler view
+  components (`KeplerVideoSurfaceView`, `useTVEventHandler`, `VideoPlayer`, drawer/stack
+  navigators) that would need heavy, low-confidence mocking to exercise under Jest. As with
+  the rest of this project, those are verified by actually running the app on the Vega
+  Virtual Device (see [Getting started](#getting-started) above), not by unit tests.
+- Also not covered: `src/w3cmedia/` (vendored/compiled Shaka Player + polyfills — same
+  "vendored, not hand-written" reasoning that excludes it from lint).
+
+`.github/workflows/test.yml` runs `typecheck`/`lint`/`test` on every push to `main` and every
+PR. It does **not** run `build:debug`/`build:release` — those need the Vega SDK toolchain
+(Amazon developer account, `vega`/`vtbuild`), which isn't available on a public GitHub-hosted
+runner.
 
 ## Roadmap
 
