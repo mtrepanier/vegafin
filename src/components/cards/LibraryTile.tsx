@@ -1,24 +1,11 @@
 import React from 'react';
 import { Image, Pressable, StyleSheet, Text, View, type PressableStateCallbackType } from 'react-native';
 import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
-import { CollectionType } from '@jellyfin/sdk/lib/generated-client/models/collection-type';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import { useTheme } from '../../theme/ThemeContext';
 import { layout } from '../../theme/types';
 import { primaryImageUrl } from '../../services/jellyfin/images';
-
-const ICON_BY_COLLECTION_TYPE: Partial<Record<string, string>> = {
-  [CollectionType.Movies]: 'movie',
-  [CollectionType.Tvshows]: 'live-tv',
-  [CollectionType.Music]: 'library-music',
-  [CollectionType.Musicvideos]: 'music-video',
-  [CollectionType.Homevideos]: 'photo-camera-back',
-  [CollectionType.Boxsets]: 'video-library',
-  [CollectionType.Books]: 'menu-book',
-  [CollectionType.Photos]: 'photo-library',
-  [CollectionType.Livetv]: 'live-tv',
-  [CollectionType.Playlists]: 'queue-music',
-};
+import { libraryIconName } from '../../services/jellyfin/libraryIcons';
 
 const TILE_WIDTH = 160;
 const TILE_HEIGHT = 90;
@@ -38,7 +25,7 @@ interface Props {
  * artwork-collage tiles. */
 export function LibraryTile({ library, hasTVPreferredFocus, onFocus, onPress }: Props) {
   const { colors } = useTheme();
-  const iconName = (library.CollectionType && ICON_BY_COLLECTION_TYPE[library.CollectionType]) || 'folder';
+  const iconName = libraryIconName(library);
   const imageUri = primaryImageUrl(library, TILE_WIDTH);
   const hasImage = Boolean(library.ImageTags?.Primary);
 

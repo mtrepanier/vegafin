@@ -6,6 +6,7 @@ import {
   thumbImageUrl,
   personImageUrl,
   continueWatchingImageUrl,
+  userImageUrl,
 } from '../../../src/services/jellyfin/images';
 
 beforeAll(() => {
@@ -75,6 +76,17 @@ describe('continueWatchingImageUrl', () => {
   it('falls back to Primary (with no tag) when the item has neither', () => {
     const url = continueWatchingImageUrl({ Id: 'item-1' }, 280);
     expect(url).toBe('https://jf.example.com/Items/item-1/Images/Primary?fillWidth=280&quality=90');
+  });
+});
+
+describe('userImageUrl', () => {
+  it('builds a Primary image URL when the user has an avatar tag', () => {
+    const url = userImageUrl({ Id: 'user-1', PrimaryImageTag: 'avatar-1' }, 90);
+    expect(url).toBe('https://jf.example.com/Users/user-1/Images/Primary?fillWidth=90&quality=90&tag=avatar-1');
+  });
+
+  it('returns undefined when the user has no PrimaryImageTag (unlike getUserImageUrl, which would still build a 404-prone URL)', () => {
+    expect(userImageUrl({ Id: 'user-1' }, 90)).toBeUndefined();
   });
 });
 

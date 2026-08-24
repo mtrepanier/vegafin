@@ -22,6 +22,10 @@ Phase 0's scaffold (navigation graph, auth/session, theming) is done, and Phase 
 - A **focus-managed card/row system** (`components/ItemRow.tsx`, `components/ItemGrid.tsx`,
   `components/cards/`) built on native `TVFocusGuideView`/`hasTVPreferredFocus` rather than any
   custom D-pad plumbing — see [Focus system](#focus-system) below.
+- A **collapsible side nav** (avatar/username/server, Search/Home/Favorites, one row per
+  library, all with icons) that expands on focus and collapses otherwise, with full D-pad
+  travel between it and the main content — see [Side nav](#side-nav-maindrawernavigatortsx)
+  under Navigation below.
 - The **Home screen** ("My Media"), with a library-shortcut row at the top (artwork + name per
   library, linking straight to that library's full grid) followed by a fixed set of rows —
   separate Continue Watching and Next Up rows (an earlier version merged them client-side with
@@ -161,6 +165,19 @@ not a plain path — `vpt validate` errors on anything else (`Icon names must fo
 knowledge-base doc bundled with the "Kepler Studio" VS Code extension. `assets/image/icon.png`
 + `icon = "@image/icon.png"` in `manifest.toml` is what satisfies it.
 
+**Icon fonts silently render nothing without a manual asset step**: `@amazon-devices/
+react-native-vector-icons` doesn't autolink its font files the way it does on stock RN
+(Xcode "Copy Bundle Resources" / Android's `fonts.gradle`) - on Kepler, `<Icon name="..." />`
+just renders blank space unless the font file has separately been placed at
+`assets/raw/fonts/<FontFamily>.ttf` in the project root (confirmed in the package's own
+README, under its "Kepler" section - `react-native.config.js`'s autolinking comment doesn't
+mention this at all, since it isn't an autolinking step). This project only uses
+`MaterialIcons`, so `assets/raw/fonts/MaterialIcons.ttf` (copied from
+`node_modules/@amazon-devices/react-native-vector-icons/Fonts/`) is the only one needed. This
+had been silently broken since the very first `Icon` usage — every icon in the app was
+rendering as nothing, not just a wrong glyph — and only became obvious once the side nav's
+collapsed state left an icon-only row with nothing else to visually mask the gap.
+
 ### Native `URL`/`URLSearchParams` gotcha — and the `@jellyfin/sdk` patch that fixes it for real
 
 Worth documenting at length since it cost significant debugging time across two separate
@@ -259,7 +276,8 @@ screen. This repo keeps that same split:
   `Backdrop.kt`. Only a handful of these show up as literal menu items in the drawer's
   `drawerContent` (matching what `NavDrawer.kt` actually shows) — the rest are pushed onto
   the same navigator from elsewhere in the app so they keep the drawer/backdrop chrome
-  without cluttering the menu.
+  without cluttering the menu. `Discover` is registered but deliberately left out of the
+  visible menu (see below) — it's a Phase 3 stub, not a dead route.
 - **`RootStackParamList`** (`fullScreen = true`) — `Settings`, `SubtitleSettings`,
   `Playback`, `PlaybackList`, `Slideshow`, `NowPlaying`, etc. Pushed as bare full-screen
   stack screens over `Main` (which hosts the drawer navigator).
@@ -268,6 +286,33 @@ screen. This repo keeps that same split:
 
 `src/App.tsx` mirrors `MainActivity.kt`: it boots the session (`ServerRepository.init()`),
 then renders `SetupNavigator` or `RootNavigator` depending on whether a session restored.
+
+#### Side nav (`MainDrawerNavigator.tsx`)
+
+A collapsible icon rail, not the earlier plain text menu: the signed-in user's avatar
+(`getUserApi(api).getCurrentUser()` + `images.ts`'s `userImageUrl`, falling back to a person
+icon) + username + server name at top, then Search/Home/Favorites each with an icon, then one
+row per Jellyfin library (icon keyed off `CollectionType` via `services/jellyfin/
+libraryIcons.ts` — shared with `LibraryTile.tsx`'s Home-screen row so both stay in sync),
+linking straight to that library's `ItemGrid`.
+
+- **Collapse/expand**: starts collapsed (~72px, icons only) and expands (~240px, icons +
+  labels) while focus is anywhere inside it, via `focus/useFocusGroupExpanded.ts` - each row's
+  `onFocus`/`onBlur` bubbles up to a shared counter, since neither the drawer package nor
+  Kepler's `TVFocusGuideView` expose a built-in "focus is somewhere inside this group"
+  callback. The width toggle is instant, not animated - `drawerStyle.width` is a plain
+  `screenOptions` value passed to a third-party navigator, and it wasn't clear that driving it
+  from an `Animated.Value` would actually animate through that layer, so animating this
+  further is a possible follow-up rather than something already attempted and abandoned.
+- **D-pad escape between the rail and content**: the rail's rows are wrapped in a `FocusGroup`
+  with `trapFocusUp`/`trapFocusDown` (stop at the first/last row rather than escaping into
+  whatever's above/below on screen) but no left/right trap (so focus can escape right into
+  the main content). Content escaping back left into the rail required removing `ItemGrid`'s
+  `trapFocusLeft` (see [Focus system](#focus-system)) - grids used to trap all horizontal
+  escape, which made the rail completely unreachable from any library grid.
+- **Scrolling**: the row list (fixed items + every library) is wrapped in a `ScrollView`
+  rather than a plain `View`, so a long library list scrolls instead of silently overflowing
+  past the bottom of the screen with no way to reach the cut-off rows.
 
 ### Auth/session
 
@@ -379,9 +424,12 @@ scoped to the **service/business-logic layer**, not screens or components:
 - Auth/session (`ServerRepository`), server URL scheme resolution/probing (`serverUrl`,
   `JellyfinClient`), the Jellyfin API layer (`playback` negotiation + progress reporting,
   `homeRows` including the Continue Watching/Next Up split, `library`, `detail`, `images`
-  including the Continue Watching Thumb/Primary fallback, the `ItemPager` pagination hook),
-  theming (`ThemeContext`), and the focus system's `useLastFocusedIndex` and
-  `usePinScrollToStart` hooks.
+  including the Continue Watching Thumb/Primary fallback and the side nav's avatar lookup,
+  `libraryIconName`'s CollectionType→icon mapping, the `ItemPager` pagination hook), theming
+  (`ThemeContext`), and the focus system's `useLastFocusedIndex`, `usePinScrollToStart`, and
+  `useFocusGroupExpanded` hooks (the last one backs the side nav's collapse/expand-on-focus
+  behavior - pulled out of `MainDrawerNavigator.tsx` specifically so it has an independent
+  test rather than only being exercised as part of the nav component itself).
 - `test/thirdPartyPatches/jellyfinSdkSearchParams.test.ts` — a regression test for the patched
   `@jellyfin/sdk` dependency itself (see the URL/URLSearchParams gotcha above). Pins the
   patch's own input/output contract; can't reproduce the platform bug it fixes, since Jest
@@ -425,11 +473,11 @@ src/
   App.tsx                     Root component: theme + session bootstrap + navigator switch
   navigation/                 Route graph (mirrors ui/nav/Destination.kt), navigateToItem.ts
   theme/                      Color palettes + ThemeContext (mirrors ui/theme/) + layout tokens
-  focus/                      FocusGroup.tsx, useLastFocusedIndex.ts, usePinScrollToStart.ts -
-                               see Focus system above
+  focus/                      FocusGroup.tsx, useLastFocusedIndex.ts, usePinScrollToStart.ts,
+                               useFocusGroupExpanded.ts - see Focus system above
   services/
     jellyfin/                 JellyfinClient.ts (@jellyfin/sdk wrapper), images.ts, ItemPager.ts,
-                               homeRows.ts, library.ts, detail.ts, playback.ts
+                               homeRows.ts, library.ts, detail.ts, playback.ts, libraryIcons.ts
     storage/ServerRepository.ts   Session/auth (mirrors data/ServerRepository.kt)
   components/                 ItemRow/ItemGrid/PosterRow, cards/ (incl. LibraryTile.tsx - Home's
                                library-shortcut row), IconButton.tsx
@@ -444,6 +492,7 @@ src/
   types/                      Ambient .d.ts augmentations (react-native-kepler/vector-icons gaps,
                                ScrollView/FlatList's focusItemAlignment - see Focus system above)
 assets/image/icon.png          512x512 app icon - see the app-icon note above
+assets/raw/fonts/MaterialIcons.ttf  Icon font asset - see the icon-fonts note above
 patches/                       patch-package diffs, applied via package.json's postinstall -
                                 see the URL/URLSearchParams gotcha above for what and why
 index.js                       AppRegistry entry point (must be .js - see build note above)

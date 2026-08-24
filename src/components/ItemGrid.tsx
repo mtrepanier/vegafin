@@ -48,7 +48,9 @@ export function ItemGrid<T>({
     renderItem(item, index, autoFocus && index === focusedIndex, () => handleFocus(index));
 
   return (
-    <FocusGroup style={styles.group} trapFocusLeft trapFocusRight>
+    // trapFocusLeft deliberately omitted: the leftmost column needs to let focus escape left
+    // into the side nav (MainDrawerNavigator) rather than being trapped inside the grid.
+    <FocusGroup style={styles.group} trapFocusRight>
       <FlatList
         ref={listRef}
         data={items}

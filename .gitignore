@@ -8,3 +8,6 @@ buildinfo.json
 .DS_Store
 .vscode/
 .idea/
+
+# Local-only Claude Code project instructions - see CLAUDE.local.md itself for what it's for.
+CLAUDE.local.md

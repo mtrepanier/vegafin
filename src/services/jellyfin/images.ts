@@ -2,6 +2,7 @@ import { getImageApi } from '@jellyfin/sdk/lib/utils/api/image-api';
 import { ImageType } from '@jellyfin/sdk/lib/generated-client/models/image-type';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import type { BaseItemPerson } from '@jellyfin/sdk/lib/generated-client/models/base-item-person';
+import type { UserDto } from '@jellyfin/sdk/lib/generated-client/models/user-dto';
 import { jellyfinClient } from './JellyfinClient';
 
 /**
@@ -51,6 +52,20 @@ export function thumbImageUrl(item: BaseItemDto, width: number): string | undefi
  */
 export function continueWatchingImageUrl(item: BaseItemDto, width: number): string | undefined {
   return item.ImageTags?.Thumb ? thumbImageUrl(item, width) : primaryImageUrl(item, width);
+}
+
+/** The signed-in user's own avatar - like `getItemImageUrl`, the SDK's `getUserImageUrl`
+ * always builds a URL as long as the user has an Id, regardless of whether a PrimaryImageTag
+ * actually exists, so that check has to happen here rather than relying on the URL being
+ * undefined when there's no avatar set. */
+export function userImageUrl(user: UserDto, width: number): string | undefined {
+  if (!user.PrimaryImageTag) {
+    return undefined;
+  }
+  return getImageApi(jellyfinClient.api).getUserImageUrl(user, {
+    fillWidth: Math.round(width),
+    quality: QUALITY,
+  });
 }
 
 /** `BaseItemPerson` (cast/crew credits) carries its image tag directly rather than an
