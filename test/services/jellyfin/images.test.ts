@@ -5,7 +5,8 @@ import {
   logoImageUrl,
   thumbImageUrl,
   personImageUrl,
-  continueWatchingImageUrl,
+  seriesAwarePosterImageUrl,
+  itemOrParentLogoImageUrl,
   userImageUrl,
 } from '../../../src/services/jellyfin/images';
 
@@ -62,20 +63,34 @@ describe('thumbImageUrl', () => {
   });
 });
 
-describe('continueWatchingImageUrl', () => {
-  it('uses Thumb when the item actually has a Thumb tag', () => {
-    const url = continueWatchingImageUrl({ Id: 'item-1', ImageTags: { Thumb: 'thumb-1', Primary: 'primary-1' } }, 280);
-    expect(url).toBe('https://jf.example.com/Items/item-1/Images/Thumb?fillWidth=280&quality=90&tag=thumb-1');
+describe('seriesAwarePosterImageUrl', () => {
+  it('uses the series poster (by SeriesId/SeriesPrimaryImageTag) for an episode', () => {
+    const url = seriesAwarePosterImageUrl(
+      { Id: 'ep-1', SeriesId: 'series-1', SeriesPrimaryImageTag: 'series-tag-1', ImageTags: { Primary: 'ep-tag-1' } },
+      150,
+    );
+    expect(url).toBe('https://jf.example.com/Items/series-1/Images/Primary?fillWidth=150&quality=90&tag=series-tag-1');
   });
 
-  it('falls back to Primary when the item has no Thumb tag (the common case for episodes)', () => {
-    const url = continueWatchingImageUrl({ Id: 'item-1', ImageTags: { Primary: 'primary-1' } }, 280);
-    expect(url).toBe('https://jf.example.com/Items/item-1/Images/Primary?fillWidth=280&quality=90&tag=primary-1');
+  it('falls back to the item own Primary image when it has no series poster info', () => {
+    const url = seriesAwarePosterImageUrl({ Id: 'movie-1', ImageTags: { Primary: 'movie-tag-1' } }, 150);
+    expect(url).toBe('https://jf.example.com/Items/movie-1/Images/Primary?fillWidth=150&quality=90&tag=movie-tag-1');
+  });
+});
+
+describe('itemOrParentLogoImageUrl', () => {
+  it('uses the item own Logo tag when present', () => {
+    const url = itemOrParentLogoImageUrl({ Id: 'item-1', ImageTags: { Logo: 'logo-1' } }, 300);
+    expect(url).toBe('https://jf.example.com/Items/item-1/Images/Logo?fillWidth=300&tag=logo-1');
   });
 
-  it('falls back to Primary (with no tag) when the item has neither', () => {
-    const url = continueWatchingImageUrl({ Id: 'item-1' }, 280);
-    expect(url).toBe('https://jf.example.com/Items/item-1/Images/Primary?fillWidth=280&quality=90');
+  it('falls back to the parent logo (ParentLogoItemId/ParentLogoImageTag) when the item has none of its own', () => {
+    const url = itemOrParentLogoImageUrl({ Id: 'ep-1', ParentLogoItemId: 'series-1', ParentLogoImageTag: 'series-logo-1' }, 300);
+    expect(url).toBe('https://jf.example.com/Items/series-1/Images/Logo?fillWidth=300&tag=series-logo-1');
+  });
+
+  it('returns undefined when there is no own or parent logo', () => {
+    expect(itemOrParentLogoImageUrl({ Id: 'item-1' }, 300)).toBeUndefined();
   });
 });
 

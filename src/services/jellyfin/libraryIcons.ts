@@ -14,8 +14,8 @@ const ICON_BY_COLLECTION_TYPE: Partial<Record<string, string>> = {
   [CollectionType.Playlists]: 'queue-music',
 };
 
-/** MaterialIcons name for a library, keyed off its CollectionType - shared by the Home
- * screen's LibraryTile row and the side nav's library section so both stay in sync. */
+/** MaterialIcons name for a library, keyed off its CollectionType - used by the side nav's
+ * library section. */
 export function libraryIconName(library: BaseItemDto): string {
   return (library.CollectionType && ICON_BY_COLLECTION_TYPE[library.CollectionType]) || 'folder';
 }

@@ -28,6 +28,8 @@ import { jellyfinClient } from '../services/jellyfin/JellyfinClient';
 import { fetchUserLibraries } from '../services/jellyfin/homeRows';
 import { userImageUrl } from '../services/jellyfin/images';
 import { libraryIconName } from '../services/jellyfin/libraryIcons';
+import { HomeBackdropContext } from './homeBackdropContext';
+import { HomeHeroBackdrop } from '../screens/HomeHeroBackdrop';
 import type { DrawerParamList } from './types';
 
 const Drawer = createDrawerNavigator<DrawerParamList>();
@@ -103,6 +105,7 @@ function DrawerContent({ navigation, state }: DrawerContentComponentProps) {
   const currentUser = useCurrentUser();
   const userId = currentUser?.user.id;
   const { expanded, reveal, release } = useContext(DrawerExpandedContext);
+  const { item: backdropItem } = useContext(HomeBackdropContext);
   const [avatarUri, setAvatarUri] = useState<string | undefined>();
   const [libraries, setLibraries] = useState<BaseItemDto[]>([]);
 
@@ -125,9 +128,12 @@ function DrawerContent({ navigation, state }: DrawerContentComponentProps) {
     };
   }, [userId]);
 
+  // Transparent while the Home hero has a backdrop up, so HomeHeroBackdrop.tsx's full-bleed
+  // image (rendered one level up, behind this whole navigator) shows through instead of being
+  // hidden behind the rail's own solid background - see homeBackdropContext.ts.
   const containerStyle = [
     styles.container,
-    { backgroundColor: colors.surface, width: expanded ? EXPANDED_WIDTH : COLLAPSED_WIDTH },
+    { backgroundColor: backdropItem ? 'transparent' : colors.surface, width: expanded ? EXPANDED_WIDTH : COLLAPSED_WIDTH },
   ];
   const avatarStyle = [styles.avatar, { backgroundColor: colors.surfaceVariant }];
 
@@ -197,6 +203,8 @@ function DrawerContent({ navigation, state }: DrawerContentComponentProps) {
 }
 
 const styles = StyleSheet.create({
+  root: { flex: 1 },
+  transparentScene: { backgroundColor: 'transparent' },
   container: { flex: 1, paddingTop: 24, paddingHorizontal: 12, gap: 4 },
   header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 4, paddingVertical: 12, marginBottom: 12 },
   avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
@@ -211,32 +219,65 @@ const styles = StyleSheet.create({
 });
 
 export function MainDrawerNavigator() {
+  const { colors } = useTheme();
   const { expanded, reveal, release } = useFocusGroupExpanded();
   const expandedContextValue = useMemo(() => ({ expanded, reveal, release }), [expanded, reveal, release]);
+  const [backdropItem, setBackdropItem] = useState<BaseItemDto | null>(null);
+  const backdropContextValue = useMemo(() => ({ item: backdropItem, setItem: setBackdropItem }), [backdropItem]);
 
   return (
-    <DrawerExpandedContext.Provider value={expandedContextValue}>
-      <Drawer.Navigator
-        screenOptions={{
-          headerShown: false,
-          drawerType: 'permanent',
-          drawerStyle: { width: expanded ? EXPANDED_WIDTH : COLLAPSED_WIDTH },
-        }}
-        drawerContent={DrawerContent}
-      >
-        <Drawer.Screen name="Home" component={HomeScreen} />
-        <Drawer.Screen name="Search" component={SearchScreen} />
-        <Drawer.Screen name="SeriesOverview" component={SeriesOverviewScreen} />
-        <Drawer.Screen name="MediaItem" component={MediaItemScreen} />
-        <Drawer.Screen name="Recordings" component={RecordingsScreen} />
-        <Drawer.Screen name="FilteredCollection" component={FilteredCollectionScreen} />
-        <Drawer.Screen name="ItemGrid" component={ItemGridScreen} />
-        <Drawer.Screen name="MoreHomeRow" component={MoreHomeRowScreen} />
-        <Drawer.Screen name="Favorites" component={FavoritesScreen} />
-        <Drawer.Screen name="Discover" component={DiscoverScreen} />
-        <Drawer.Screen name="DiscoveredItem" component={DiscoveredItemScreen} />
-        <Drawer.Screen name="DiscoverMoreResult" component={DiscoverMoreResultScreen} />
-      </Drawer.Navigator>
-    </DrawerExpandedContext.Provider>
+    <HomeBackdropContext.Provider value={backdropContextValue}>
+      <View style={[styles.root, { backgroundColor: colors.background }]}>
+        {/* Rendered here, not inside HomeScreen.tsx, so it can go full-bleed behind the side
+            nav rail below - HomeScreen's own tree only ever occupies the content pane to the
+            rail's right. */}
+        <HomeHeroBackdrop item={backdropItem} />
+        <DrawerExpandedContext.Provider value={expandedContextValue}>
+          <Drawer.Navigator
+            screenOptions={{
+              headerShown: false,
+              drawerType: 'permanent',
+              // backgroundColor here (not just DrawerContent's own inner container below) is
+              // required for real transparency: react-native-drawer-layout wraps whatever
+              // drawerContent renders in its own Animated.View, styled from this same
+              // drawerStyle option plus its own colors.card default - that outer wrapper paints
+              // an opaque background *in front of* HomeHeroBackdrop regardless of what
+              // DrawerContent's own background is set to, so both have to go transparent
+              // together.
+              drawerStyle: {
+                width: expanded ? EXPANDED_WIDTH : COLLAPSED_WIDTH,
+                backgroundColor: backdropItem ? 'transparent' : colors.surface,
+                // react-native-drawer-layout draws a hairline border between a `permanent`
+                // drawer and the content pane by default, colored from the navigation theme's
+                // `colors.border` (App.tsx maps that straight to our own `colors.border` - the
+                // TV focus-ring color, not a chrome/divider color) - showed up as a stray
+                // purple line between the rail and the screen. Zeroed out rather than
+                // recolored, since this app has no other use for a divider there.
+                borderRightWidth: 0,
+              },
+            }}
+            drawerContent={DrawerContent}
+          >
+            {/* sceneStyle transparent here only: every Drawer.Screen is wrapped by the
+                navigator's own Screen/Background, which unconditionally paints an opaque
+                colors.background over the whole content pane and would otherwise hide
+                HomeHeroBackdrop completely, not just behind the nav rail. Every other screen
+                keeps the navigator's default opaque background. */}
+            <Drawer.Screen name="Home" component={HomeScreen} options={{ sceneStyle: styles.transparentScene }} />
+            <Drawer.Screen name="Search" component={SearchScreen} />
+            <Drawer.Screen name="SeriesOverview" component={SeriesOverviewScreen} />
+            <Drawer.Screen name="MediaItem" component={MediaItemScreen} />
+            <Drawer.Screen name="Recordings" component={RecordingsScreen} />
+            <Drawer.Screen name="FilteredCollection" component={FilteredCollectionScreen} />
+            <Drawer.Screen name="ItemGrid" component={ItemGridScreen} />
+            <Drawer.Screen name="MoreHomeRow" component={MoreHomeRowScreen} />
+            <Drawer.Screen name="Favorites" component={FavoritesScreen} />
+            <Drawer.Screen name="Discover" component={DiscoverScreen} />
+            <Drawer.Screen name="DiscoveredItem" component={DiscoveredItemScreen} />
+            <Drawer.Screen name="DiscoverMoreResult" component={DiscoverMoreResultScreen} />
+          </Drawer.Navigator>
+        </DrawerExpandedContext.Provider>
+      </View>
+    </HomeBackdropContext.Provider>
   );
 }

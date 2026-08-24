@@ -80,13 +80,13 @@ export interface LayoutTokens {
 }
 
 export const layout: LayoutTokens = {
-  poster: { width: 150, height: 225 },
-  landscape: { width: 280, height: 158 },
-  square: { width: 150, height: 150 },
-  cardSpacing: 16,
-  contentPadding: 48,
+  poster: { width: 115, height: 172 },
+  landscape: { width: 215, height: 121 },
+  square: { width: 115, height: 115 },
+  cardSpacing: 12,
+  contentPadding: 40,
   rowTitleGap: 12,
-  rowSpacing: 32,
+  rowSpacing: 28,
   focusBorderWidth: 3,
   focusScale: 1.08,
 };

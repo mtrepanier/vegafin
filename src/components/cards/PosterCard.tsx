@@ -12,6 +12,7 @@ interface Props {
   progressPercent?: number;
   watched?: boolean;
   favorite?: boolean;
+  episodeBadge?: string;
   hasTVPreferredFocus?: boolean;
   onFocus?: () => void;
   onPress: () => void;
@@ -32,6 +33,7 @@ export function PosterCard({
   progressPercent,
   watched,
   favorite,
+  episodeBadge,
   hasTVPreferredFocus,
   onFocus,
   onPress,
@@ -82,6 +84,7 @@ export function PosterCard({
                 progressPercent={progressPercent}
                 watched={watched}
                 favorite={favorite}
+                episodeBadge={episodeBadge}
               />
             </View>
             {title ? (

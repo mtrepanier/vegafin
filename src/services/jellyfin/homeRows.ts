@@ -3,11 +3,17 @@ import { getTvShowsApi } from '@jellyfin/sdk/lib/utils/api/tv-shows-api';
 import { getUserLibraryApi } from '@jellyfin/sdk/lib/utils/api/user-library-api';
 import { getUserViewsApi } from '@jellyfin/sdk/lib/utils/api/user-views-api';
 import { CollectionType } from '@jellyfin/sdk/lib/generated-client/models/collection-type';
+import { ItemFields } from '@jellyfin/sdk/lib/generated-client/models/item-fields';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import { jellyfinClient } from './JellyfinClient';
 import type { HomeRowRef } from '../../navigation/types';
 
 const ROW_LIMIT = 20;
+
+/** Jellyfin's list endpoints (`/Items/Resume`, `/Shows/NextUp`, `/Items/Latest`) omit this by
+ * default for payload size - the Home hero (`HomeHero.tsx`) needs it for whichever row item
+ * currently has focus. */
+const HOME_ROW_FIELDS = [ItemFields.Overview];
 
 /** Library types Phase 1's fixed home rows cover (matches Kotlin's `createDefault()`). */
 const RECENTLY_ADDED_COLLECTION_TYPES = new Set<string>([CollectionType.Movies, CollectionType.Tvshows]);
@@ -64,9 +70,17 @@ export async function fetchDefaultHomeRowConfigs(userId: string): Promise<HomeRo
   return configs;
 }
 
-/** In-progress (resumable) items - movies/episodes with a saved playback position. */
+/** In-progress (resumable) items - movies/episodes with a saved playback position.
+ * `enableUserData` is passed explicitly (not left to whatever the server defaults to when the
+ * param is omitted) since the Home hero's "time remaining" depends on `UserData` actually
+ * being present. */
 async function fetchResumeRow(userId: string, limit: number): Promise<BaseItemDto[]> {
-  const { data } = await getItemsApi(jellyfinClient.api).getResumeItems({ userId, limit });
+  const { data } = await getItemsApi(jellyfinClient.api).getResumeItems({
+    userId,
+    limit,
+    fields: HOME_ROW_FIELDS,
+    enableUserData: true,
+  });
   return data.Items ?? [];
 }
 
@@ -75,12 +89,23 @@ async function fetchResumeRow(userId: string, limit: number): Promise<BaseItemDt
  * tested on real Fire TV hardware): the server's own `/Shows/NextUp` already excludes a series
  * whose next episode is the one actively being resumed. */
 async function fetchNextUpRow(userId: string, limit: number): Promise<BaseItemDto[]> {
-  const { data } = await getTvShowsApi(jellyfinClient.api).getNextUp({ userId, limit });
+  const { data } = await getTvShowsApi(jellyfinClient.api).getNextUp({
+    userId,
+    limit,
+    fields: HOME_ROW_FIELDS,
+    enableUserData: true,
+  });
   return data.Items ?? [];
 }
 
 async function fetchRecentlyAddedRow(userId: string, libraryId: string, limit: number): Promise<BaseItemDto[]> {
-  const { data } = await getUserLibraryApi(jellyfinClient.api).getLatestMedia({ userId, parentId: libraryId, limit });
+  const { data } = await getUserLibraryApi(jellyfinClient.api).getLatestMedia({
+    userId,
+    parentId: libraryId,
+    limit,
+    fields: HOME_ROW_FIELDS,
+    enableUserData: true,
+  });
   return data;
 }
 

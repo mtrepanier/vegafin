@@ -1,5 +1,5 @@
 import React from 'react';
-import { Image, StyleSheet, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
 import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
 import { useTheme } from '../../theme/ThemeContext';
 
@@ -11,6 +11,9 @@ interface Props {
   progressPercent?: number;
   watched?: boolean;
   favorite?: boolean;
+  /** "E5" corner badge for an episode card standing in for its series' poster - see
+   * `episodeBadgeLabel`. */
+  episodeBadge?: string;
   borderRadius?: number;
 }
 
@@ -19,7 +22,7 @@ interface Props {
  * favorite heart, and resume-progress bar overlays common to all of them. Mirrors
  * `ItemCardImage.kt`.
  */
-export function CardImage({ uri, width, height, progressPercent, watched, favorite, borderRadius = 6 }: Props) {
+export function CardImage({ uri, width, height, progressPercent, watched, favorite, episodeBadge, borderRadius = 6 }: Props) {
   const { colors } = useTheme();
   const showProgress = progressPercent != null && progressPercent > 0 && progressPercent < 100;
 
@@ -34,8 +37,20 @@ export function CardImage({ uri, width, height, progressPercent, watched, favori
         <Image source={{ uri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
       ) : null}
 
+      {episodeBadge ? (
+        <View style={styles.episodeBadge}>
+          <Text style={styles.episodeBadgeText}>{episodeBadge}</Text>
+        </View>
+      ) : null}
+
       {watched ? (
-        <View style={[styles.badge, styles.watchedBadge, { backgroundColor: colors.primary }]}>
+        <View
+          style={[
+            styles.badge,
+            episodeBadge ? styles.watchedBadgeBelowEpisodeBadge : styles.watchedBadge,
+            { backgroundColor: colors.primary },
+          ]}
+        >
           <Icon name="check" size={12} color={colors.onPrimary} />
         </View>
       ) : null}
@@ -76,9 +91,30 @@ const styles = StyleSheet.create({
   watchedBadge: {
     right: 6,
   },
+  watchedBadgeBelowEpisodeBadge: {
+    right: 6,
+    top: 32,
+  },
   favoriteBadge: {
     left: 6,
     backgroundColor: 'rgba(0, 0, 0, 0.55)',
+  },
+  episodeBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    minWidth: 24,
+    height: 20,
+    paddingHorizontal: 4,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+  },
+  episodeBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#fff',
   },
   progressTrack: {
     position: 'absolute',

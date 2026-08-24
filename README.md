@@ -26,13 +26,14 @@ Phase 0's scaffold (navigation graph, auth/session, theming) is done, and Phase 
   library, all with icons) that expands on focus and collapses otherwise, with full D-pad
   travel between it and the main content — see [Side nav](#side-nav-maindrawernavigatortsx)
   under Navigation below.
-- The **Home screen** ("My Media"), with a library-shortcut row at the top (artwork + name per
-  library, linking straight to that library's full grid) followed by a fixed set of rows —
-  separate Continue Watching and Next Up rows (an earlier version merged them client-side with
-  a SeriesId dedup, which just meant genuinely in-progress items got crowded out whenever a
-  same-series "next up" entry happened to load first — split apart to match the server's own
-  `/Items/Resume` and `/Shows/NextUp` results directly), one Recently Added row per library —
-  rather than Kotlin's user-configurable row settings, which is Phase 2 territory.
+- The **Home screen** ("My Media" — now just the rows, since the library-shortcut row moved
+  into the side nav above), a hero banner for whichever card currently has focus, and a
+  fixed set of content rows — separate Continue Watching and Next Up rows (an earlier version
+  merged them client-side with a SeriesId dedup, which just meant genuinely in-progress items
+  got crowded out whenever a same-series "next up" entry happened to load first — split apart
+  to match the server's own `/Items/Resume` and `/Shows/NextUp` results directly), one
+  Recently Added row per library — rather than Kotlin's user-configurable row settings, which
+  is Phase 2 territory. See [Home screen](#home-screen-homescreentsx-homeherotsx-homeherobackdroptsx) below.
 - **Library grid/list browsing** (`FilteredCollection`/`ItemGrid`/`MoreHomeRow`/`Favorites`),
   with sort and a grid/list view toggle.
 - **Detail pages** for Movie, Episode, Collection (box set), and Person, plus a full
@@ -293,8 +294,10 @@ A collapsible icon rail, not the earlier plain text menu: the signed-in user's a
 (`getUserApi(api).getCurrentUser()` + `images.ts`'s `userImageUrl`, falling back to a person
 icon) + username + server name at top, then Search/Home/Favorites each with an icon, then one
 row per Jellyfin library (icon keyed off `CollectionType` via `services/jellyfin/
-libraryIcons.ts` — shared with `LibraryTile.tsx`'s Home-screen row so both stay in sync),
-linking straight to that library's `ItemGrid`.
+libraryIcons.ts`), linking straight to that library's `ItemGrid`. The library-shortcut row
+that used to sit at the top of the Home screen (`LibraryTile.tsx`) was removed once this rail
+covered the same navigation — the rail is reachable from every screen, the old row only from
+Home's very top.
 
 - **Collapse/expand**: starts collapsed (~72px, icons only) and expands (~240px, icons +
   labels) while focus is anywhere inside it, via `focus/useFocusGroupExpanded.ts` - each row's
@@ -313,6 +316,78 @@ linking straight to that library's `ItemGrid`.
 - **Scrolling**: the row list (fixed items + every library) is wrapped in a `ScrollView`
   rather than a plain `View`, so a long library list scrolls instead of silently overflowing
   past the bottom of the screen with no way to reach the cut-off rows.
+- **Goes transparent behind the Home hero**: the rail's own background is normally
+  `colors.surface`, but turns transparent while the Home screen has a focused item to show a
+  backdrop for, so that backdrop (rendered above this whole navigator - see [Home
+  screen](#home-screen-homescreentsx-homeherotsx-homeherobackdroptsx) below) shows through
+  behind the icons instead of being hidden behind an opaque rail.
+- **No hairline border between the rail and the content pane**: `react-native-drawer-layout`
+  draws one there by default for a `permanent` drawer, colored from the navigation theme's
+  `colors.border` - which `App.tsx` maps straight to this app's own `colors.border`, the TV
+  focus-ring color, not a chrome/divider color, so it showed up as a stray purple line down the
+  screen. `screenOptions.drawerStyle` now sets `borderRightWidth: 0` to remove it.
+
+#### Home screen (`HomeScreen.tsx`, `HomeHero.tsx`, `HomeHeroBackdrop.tsx`)
+
+Matches AmbientFlare/astra-tv's (a separate Jellyfin-for-Vega client tested on real Fire TV
+hardware) hero-style home page rather than the earlier plain title-and-rows layout: whichever
+card currently has D-pad focus drives a pinned hero at the top, with a fixed set of content
+rows scrolling independently below it.
+
+- **Hero and rows are two independent layout containers, not one shared `ScrollView`.**
+  `HomeHero.tsx` (logo/title, episode title, info line, overview, the top-right `Clock`) renders
+  in a fixed `HOME_HERO_CONTENT_HEIGHT`-tall `View`, a real flex sibling above the rows'
+  `ScrollView` in `HomeScreen.tsx`, so it stays visible while browsing instead of scrolling away.
+  Putting the hero in-flow as the `ScrollView`'s own first child (an earlier version) hits a real
+  Kepler gotcha: `focusItemAlignment="start"` aligns whichever *card* just took focus to the
+  viewport's top edge, not that card's whole row - so it can scroll straight past a hero-height
+  spacer and pull rows up underneath a pinned hero, and separately can clip a row's own title
+  (rendered above its card list) right at the edge. Fixed by giving hero and rows separate
+  containers with no shared scroll offset to fight over, and by driving the rows' vertical
+  scroll manually instead of via `focusItemAlignment` at all: each row's y-offset is captured
+  via `onLayout` (`rowOffsetsRef`), and a card's `onFocus` scrolls to that offset -
+  `scrollRowIntoView` - once per row change, not per card.
+- **The backdrop is a separate full-screen layer, not part of `HomeScreen.tsx`.**
+  `HomeHeroBackdrop.tsx` renders as a sibling *before* `Drawer.Navigator` in
+  `MainDrawerNavigator.tsx`, so it can paint behind the side nav rail and down the whole screen
+  height - nothing inside `HomeScreen.tsx`'s own tree can ever draw behind the rail, since the
+  `permanent`-type drawer and the screen content are laid out as side-by-side flex children. The
+  image only covers the top `HOME_HERO_BACKDROP_HEIGHT` pixels (`homeHeroLayout.ts`, taller than
+  the text panel on purpose) before fading into a solid `colors.background` fill via a real SVG
+  `LinearGradient` (`@amazon-devices/react-native-svg`, a system-deployed Kepler library, no
+  manual linking step) - not stacked flat-opacity `View`s, which band visibly against a busy
+  image no matter how many/small the steps. Two separate opaque layers had to go transparent for
+  any of this to actually show behind the rail: react-navigation's `Screen`/`Background`, which
+  paints every `Drawer.Screen`'s whole content pane by default (overridden for the `Home` route
+  only, via `sceneStyle`), and `react-native-drawer-layout`'s own wrapper `Animated.View` around
+  `drawerContent`, styled from `screenOptions.drawerStyle` independently of `DrawerContent`'s own
+  inner container - both need the same conditional `backgroundColor` or one or the other paints
+  over the backdrop regardless.
+- **Continue Watching/Next Up show the parent series' poster, not the episode's own image.**
+  `images.ts`'s `seriesAwarePosterImageUrl` uses `SeriesId`/`SeriesPrimaryImageTag` so these rows
+  match every other row's portrait-poster shape instead of an episode's landscape still, with a
+  small "E5" corner badge (`episodeBadge.ts`) so same-show episodes stay distinguishable. Movies
+  pass through to their own Primary image, no badge. Cards on this screen also render with no
+  title/subtitle under the art (`PosterCard`'s `title`/`subtitle` simply aren't passed) - the
+  hero already shows the focused item's identity, so repeating it under every card read as
+  clutter; other screens using `PosterCard` (library grids, `PosterRow.tsx`) keep theirs, since
+  they have no persistent hero doing that job.
+- **`formatHeroInfoLine` (`util/format.ts`) shapes its output per item type, and returns
+  segments rather than one joined string.** An episode leads with "S1 E5" plus its full air date
+  ("Jun 19, 2026"); anything else gets year/runtime/official rating instead - the episode title
+  shown above this line already covers identity, so repeating year/rating there would be
+  redundant. Both then append `CommunityRating`/`CriticRating` ("🍅 92%") when present, and the
+  time remaining ("22m left" via `formatTimeRemaining`, not a computed "Ends at" clock time) for
+  an in-progress item - computed from `UserData.PlayedPercentage` in preference to
+  `PlaybackPositionTicks`, since that's the field a real `/Items/Resume` response reliably
+  carries (`homeRows.ts` now also requests `Overview` and `enableUserData: true` explicitly on
+  all three Home row fetches, rather than relying on Jellyfin's list-endpoint defaults). Segments
+  (`HeroInfoSegment[]`, not a pre-joined string) let `HomeHero.tsx` give the community rating's
+  star its own color/size (gold, a couple points larger than the surrounding text - a plain "★"
+  glyph renders visibly smaller than the 🍅 emoji next to it at the same nominal `fontSize`),
+  which a flat string couldn't.
+- **Card sizing shrank app-wide** (`theme/types.ts`'s `layout` tokens, ~20-25% smaller) to match
+  Wholphin's card density - global, not Home-only, since every row/grid shares these constants.
 
 ### Auth/session
 
@@ -424,12 +499,15 @@ scoped to the **service/business-logic layer**, not screens or components:
 - Auth/session (`ServerRepository`), server URL scheme resolution/probing (`serverUrl`,
   `JellyfinClient`), the Jellyfin API layer (`playback` negotiation + progress reporting,
   `homeRows` including the Continue Watching/Next Up split, `library`, `detail`, `images`
-  including the Continue Watching Thumb/Primary fallback and the side nav's avatar lookup,
-  `libraryIconName`'s CollectionType→icon mapping, the `ItemPager` pagination hook), theming
-  (`ThemeContext`), and the focus system's `useLastFocusedIndex`, `usePinScrollToStart`, and
-  `useFocusGroupExpanded` hooks (the last one backs the side nav's collapse/expand-on-focus
-  behavior - pulled out of `MainDrawerNavigator.tsx` specifically so it has an independent
-  test rather than only being exercised as part of the nav component itself).
+  including the Home hero's series-aware poster/logo fallbacks and the side nav's avatar
+  lookup, `episodeBadge`'s "E5" corner-badge labeling, `libraryIconName`'s CollectionType→icon
+  mapping, the `ItemPager` pagination hook), the pure formatting helpers in `util/format.ts`
+  (including the Home hero's `formatHeroInfoLine`), `util/useCurrentTime.ts` (the hero clock's
+  interval hook), theming (`ThemeContext`), and the focus system's `useLastFocusedIndex`,
+  `usePinScrollToStart`, and `useFocusGroupExpanded` hooks (the last one backs the side nav's
+  collapse/expand-on-focus behavior - pulled out of `MainDrawerNavigator.tsx` specifically so
+  it has an independent test rather than only being exercised as part of the nav component
+  itself).
 - `test/thirdPartyPatches/jellyfinSdkSearchParams.test.ts` — a regression test for the patched
   `@jellyfin/sdk` dependency itself (see the URL/URLSearchParams gotcha above). Pins the
   patch's own input/output contract; can't reproduce the platform bug it fixes, since Jest
@@ -451,9 +529,10 @@ runner.
 ## Roadmap
 
 - **Phase 1** (done, verified on the Vega Virtual Device) — Home page ("My Media": a
-  library-shortcut row plus separate Continue Watching/Next Up/Recently-Added rows), library
-  grid/list browsing, Movie/Episode/Collection/Person detail pages plus a binge-style Series
-  overview, core playback (`KeplerVideoSurfaceView` + a vendored Shaka Player over
+  focus-driven hero banner plus separate Continue Watching/Next Up/Recently-Added rows), a
+  collapsible icon side nav (avatar/library shortcuts, replacing the earlier Home-screen
+  library row), library grid/list browsing, Movie/Episode/Collection/Person detail pages plus
+  a binge-style Series overview, core playback (`KeplerVideoSurfaceView` + a vendored Shaka Player over
   always-transcoded HLS, full remote-control input, auto-hiding custom controls — see the
   correction above), Quick Connect + password sign-in, a focus-managed card/row system built
   on native `TVFocusGuideView`/`hasTVPreferredFocus` (see [Focus system](#focus-system)), and a
@@ -471,18 +550,23 @@ runner.
 ```
 src/
   App.tsx                     Root component: theme + session bootstrap + navigator switch
-  navigation/                 Route graph (mirrors ui/nav/Destination.kt), navigateToItem.ts
+  navigation/                 Route graph (mirrors ui/nav/Destination.kt), navigateToItem.ts,
+                               homeBackdropContext.ts (Home hero state shared with the side nav)
   theme/                      Color palettes + ThemeContext (mirrors ui/theme/) + layout tokens
   focus/                      FocusGroup.tsx, useLastFocusedIndex.ts, usePinScrollToStart.ts,
                                useFocusGroupExpanded.ts - see Focus system above
+  util/                       format.ts (incl. the Home hero's formatHeroInfoLine),
+                               useCurrentTime.ts (hero clock), uuid.ts
   services/
     jellyfin/                 JellyfinClient.ts (@jellyfin/sdk wrapper), images.ts, ItemPager.ts,
-                               homeRows.ts, library.ts, detail.ts, playback.ts, libraryIcons.ts
+                               homeRows.ts, library.ts, detail.ts, playback.ts, libraryIcons.ts,
+                               episodeBadge.ts
     storage/ServerRepository.ts   Session/auth (mirrors data/ServerRepository.kt)
-  components/                 ItemRow/ItemGrid/PosterRow, cards/ (incl. LibraryTile.tsx - Home's
-                               library-shortcut row), IconButton.tsx
+  components/                 ItemRow/ItemGrid/PosterRow, cards/, Clock.tsx (Home hero's
+                               top-right clock), IconButton.tsx
   screens/
-    HomeScreen.tsx, FavoritesScreen.tsx, SeriesOverviewScreen.tsx, MediaItemScreen.tsx
+    HomeScreen.tsx, HomeHero.tsx, HomeHeroBackdrop.tsx, homeHeroLayout.ts (shared hero height),
+    FavoritesScreen.tsx, SeriesOverviewScreen.tsx, MediaItemScreen.tsx
     library/                  FilteredCollection/ItemGrid/MoreHomeRow screens
     detail/                   Movie/Episode/Collection/Person detail, series/ (SeriesOverview parts)
     playback/                 PlaybackScreen, PlaybackListScreen (KeplerVideoSurfaceView + ShakaPlayer)

@@ -42,16 +42,41 @@ export function thumbImageUrl(item: BaseItemDto, width: number): string | undefi
 }
 
 /**
- * Landscape-oriented image for Continue Watching/Next Up cards: Thumb when the item actually
- * has one, otherwise Primary. `thumbImageUrl`/`primaryImageUrl` always build a URL as long as
- * the item has an Id - the SDK's `getItemImageUrl` doesn't check whether that image type's tag
- * actually exists before constructing the request (unlike its own backdrop helper, which does)
- * - so a naive `thumbImageUrl(item, w) ?? primaryImageUrl(item, w)` never falls back and just
- * 404s for episodes, which almost never have their own Thumb image, only Primary. Checking
- * `ImageTags.Thumb` directly here is what makes the fallback real.
+ * Portrait poster art for Continue Watching/Next Up cards. An episode's own Primary/Thumb tags
+ * (when it even has them) are a landscape screenshot-style still - stretched into the same
+ * portrait card every other row uses, it read as the wrong item entirely. Jellyfin carries the
+ * parent series' own poster right on the episode DTO (`SeriesId`/`SeriesPrimaryImageTag`), so an
+ * episode uses that instead; movies and everything else just fall through to their own Primary.
  */
-export function continueWatchingImageUrl(item: BaseItemDto, width: number): string | undefined {
-  return item.ImageTags?.Thumb ? thumbImageUrl(item, width) : primaryImageUrl(item, width);
+export function seriesAwarePosterImageUrl(item: BaseItemDto, width: number): string | undefined {
+  if (item.SeriesId && item.SeriesPrimaryImageTag) {
+    return getImageApi(jellyfinClient.api).getItemImageUrlById(item.SeriesId, ImageType.Primary, {
+      fillWidth: Math.round(width),
+      quality: QUALITY,
+      tag: item.SeriesPrimaryImageTag,
+    });
+  }
+  return primaryImageUrl(item, width);
+}
+
+/**
+ * Franchise/show logo for the Home hero (`HomeHero.tsx`). Same parent-fallback shape as
+ * `seriesAwarePosterImageUrl`, but Logo has no server-side parent-aware helper the way
+ * `getItemBackdropImageUrls` has for backdrops, and unlike Primary/Thumb, an episode's own
+ * `ImageTags.Logo` essentially never exists - so this checks tag presence itself at each level
+ * (own, then `ParentLogoItemId`/`ParentLogoImageTag`) rather than delegating to the SDK.
+ */
+export function itemOrParentLogoImageUrl(item: BaseItemDto, width: number): string | undefined {
+  if (item.ImageTags?.Logo) {
+    return logoImageUrl(item, width);
+  }
+  if (item.ParentLogoItemId && item.ParentLogoImageTag) {
+    return getImageApi(jellyfinClient.api).getItemImageUrlById(item.ParentLogoItemId, ImageType.Logo, {
+      fillWidth: Math.round(width),
+      tag: item.ParentLogoImageTag,
+    });
+  }
+  return undefined;
 }
 
 /** The signed-in user's own avatar - like `getItemImageUrl`, the SDK's `getUserImageUrl`

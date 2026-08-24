@@ -115,7 +115,7 @@ describe('fetchHomeRowItems - continueWatching', () => {
     const items = await fetchHomeRowItems('user-1', { key: 'continueWatching', kind: 'continueWatching', title: '' }, 20);
 
     expect(items).toEqual([{ Id: 'resume-1', SeriesId: 'series-a' }]);
-    expect(mockGetResumeItems).toHaveBeenCalledWith({ userId: 'user-1', limit: 20 });
+    expect(mockGetResumeItems).toHaveBeenCalledWith({ userId: 'user-1', limit: 20, fields: ['Overview'], enableUserData: true });
     expect(mockGetNextUp).not.toHaveBeenCalled();
   });
 
@@ -133,7 +133,7 @@ describe('fetchHomeRowItems - nextUp', () => {
     const items = await fetchHomeRowItems('user-1', { key: 'nextUp', kind: 'nextUp', title: '' }, 20);
 
     expect(items).toEqual([{ Id: 'nextup-1', SeriesId: 'series-b' }]);
-    expect(mockGetNextUp).toHaveBeenCalledWith({ userId: 'user-1', limit: 20 });
+    expect(mockGetNextUp).toHaveBeenCalledWith({ userId: 'user-1', limit: 20, fields: ['Overview'], enableUserData: true });
     expect(mockGetResumeItems).not.toHaveBeenCalled();
   });
 
@@ -155,6 +155,12 @@ describe('fetchHomeRowItems - recentlyAdded', () => {
     );
 
     expect(items).toEqual([{ Id: 'a' }, { Id: 'b' }]);
-    expect(mockGetLatestMedia).toHaveBeenCalledWith({ userId: 'user-1', parentId: 'lib-1', limit: 20 });
+    expect(mockGetLatestMedia).toHaveBeenCalledWith({
+      userId: 'user-1',
+      parentId: 'lib-1',
+      limit: 20,
+      fields: ['Overview'],
+      enableUserData: true,
+    });
   });
 });
