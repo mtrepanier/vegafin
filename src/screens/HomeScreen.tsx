@@ -6,7 +6,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { layout } from '../theme/types';
 import { usePinScrollToStart } from '../focus/usePinScrollToStart';
 import { useCurrentUser } from '../services/storage/ServerRepositoryContext';
-import { useHomeBackdrop } from '../navigation/homeBackdropContext';
+import { useScreenBackdrop } from '../navigation/screenBackdropContext';
 import { fetchDefaultHomeRowConfigs, fetchHomeRowItems, homeRowRef, type HomeRowConfig } from '../services/jellyfin/homeRows';
 import { primaryImageUrl, seriesAwarePosterImageUrl } from '../services/jellyfin/images';
 import { episodeBadgeLabel } from '../services/jellyfin/episodeBadge';
@@ -33,7 +33,7 @@ export function HomeScreen() {
   const userId = currentUser?.user.id;
 
   const [rows, setRows] = useState<RowState[] | null>(null);
-  const { item: focusedItem, setItem: setFocusedItem } = useHomeBackdrop();
+  const { item: focusedItem, setItem: setFocusedItem } = useScreenBackdrop();
   // Each row's own y-offset within the ScrollView's content, captured via onLayout below, and
   // used to scroll a row's title fully into view when a card inside it takes focus - see the
   // comment above the ScrollView for why this replaces focusItemAlignment here. Only acts on

@@ -28,8 +28,8 @@ import { jellyfinClient } from '../services/jellyfin/JellyfinClient';
 import { fetchUserLibraries } from '../services/jellyfin/homeRows';
 import { userImageUrl } from '../services/jellyfin/images';
 import { libraryIconName } from '../services/jellyfin/libraryIcons';
-import { HomeBackdropContext } from './homeBackdropContext';
-import { HomeHeroBackdrop } from '../screens/HomeHeroBackdrop';
+import { ScreenBackdropContext } from './screenBackdropContext';
+import { ScreenBackdrop } from '../screens/ScreenBackdrop';
 import type { DrawerParamList } from './types';
 
 const Drawer = createDrawerNavigator<DrawerParamList>();
@@ -105,7 +105,7 @@ function DrawerContent({ navigation, state }: DrawerContentComponentProps) {
   const currentUser = useCurrentUser();
   const userId = currentUser?.user.id;
   const { expanded, reveal, release } = useContext(DrawerExpandedContext);
-  const { item: backdropItem } = useContext(HomeBackdropContext);
+  const { item: backdropItem } = useContext(ScreenBackdropContext);
   const [avatarUri, setAvatarUri] = useState<string | undefined>();
   const [libraries, setLibraries] = useState<BaseItemDto[]>([]);
 
@@ -128,9 +128,9 @@ function DrawerContent({ navigation, state }: DrawerContentComponentProps) {
     };
   }, [userId]);
 
-  // Transparent while the Home hero has a backdrop up, so HomeHeroBackdrop.tsx's full-bleed
+  // Transparent while the active screen has a backdrop up, so ScreenBackdrop.tsx's full-bleed
   // image (rendered one level up, behind this whole navigator) shows through instead of being
-  // hidden behind the rail's own solid background - see homeBackdropContext.ts.
+  // hidden behind the rail's own solid background - see screenBackdropContext.ts.
   const containerStyle = [
     styles.container,
     { backgroundColor: backdropItem ? 'transparent' : colors.surface, width: expanded ? EXPANDED_WIDTH : COLLAPSED_WIDTH },
@@ -226,12 +226,12 @@ export function MainDrawerNavigator() {
   const backdropContextValue = useMemo(() => ({ item: backdropItem, setItem: setBackdropItem }), [backdropItem]);
 
   return (
-    <HomeBackdropContext.Provider value={backdropContextValue}>
+    <ScreenBackdropContext.Provider value={backdropContextValue}>
       <View style={[styles.root, { backgroundColor: colors.background }]}>
-        {/* Rendered here, not inside HomeScreen.tsx, so it can go full-bleed behind the side
-            nav rail below - HomeScreen's own tree only ever occupies the content pane to the
-            rail's right. */}
-        <HomeHeroBackdrop item={backdropItem} />
+        {/* Rendered here, not inside whichever screen set it, so it can go full-bleed behind
+            the side nav rail below - a screen's own tree only ever occupies the content pane
+            to the rail's right. */}
+        <ScreenBackdrop item={backdropItem} />
         <DrawerExpandedContext.Provider value={expandedContextValue}>
           <Drawer.Navigator
             screenOptions={{
@@ -258,15 +258,18 @@ export function MainDrawerNavigator() {
             }}
             drawerContent={DrawerContent}
           >
-            {/* sceneStyle transparent here only: every Drawer.Screen is wrapped by the
-                navigator's own Screen/Background, which unconditionally paints an opaque
-                colors.background over the whole content pane and would otherwise hide
-                HomeHeroBackdrop completely, not just behind the nav rail. Every other screen
+            {/* sceneStyle transparent on Home and MediaItem only: every Drawer.Screen is
+                wrapped by the navigator's own Screen/Background, which unconditionally paints
+                an opaque colors.background over the whole content pane and would otherwise
+                hide ScreenBackdrop completely, not just behind the nav rail. MediaItem covers
+                Movie/Episode/Collection/Person detail (see MediaItemScreen.tsx) - only
+                MovieDetail.tsx currently sets a backdrop, so the others just fall through to
+                this View's own colors.background below, same as before. Every other screen
                 keeps the navigator's default opaque background. */}
             <Drawer.Screen name="Home" component={HomeScreen} options={{ sceneStyle: styles.transparentScene }} />
             <Drawer.Screen name="Search" component={SearchScreen} />
             <Drawer.Screen name="SeriesOverview" component={SeriesOverviewScreen} />
-            <Drawer.Screen name="MediaItem" component={MediaItemScreen} />
+            <Drawer.Screen name="MediaItem" component={MediaItemScreen} options={{ sceneStyle: styles.transparentScene }} />
             <Drawer.Screen name="Recordings" component={RecordingsScreen} />
             <Drawer.Screen name="FilteredCollection" component={FilteredCollectionScreen} />
             <Drawer.Screen name="ItemGrid" component={ItemGridScreen} />
@@ -278,6 +281,6 @@ export function MainDrawerNavigator() {
           </Drawer.Navigator>
         </DrawerExpandedContext.Provider>
       </View>
-    </HomeBackdropContext.Provider>
+    </ScreenBackdropContext.Provider>
   );
 }

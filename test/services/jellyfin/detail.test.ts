@@ -1,6 +1,7 @@
 const mockGetItems = jest.fn();
 const mockGetSimilarItems = jest.fn();
 const mockGetItem = jest.fn();
+const mockGetLocalTrailers = jest.fn();
 const mockGetEpisodes = jest.fn();
 const mockMarkFavoriteItem = jest.fn();
 const mockUnmarkFavoriteItem = jest.fn();
@@ -19,6 +20,7 @@ jest.mock('@jellyfin/sdk/lib/utils/api/library-api', () => ({
 jest.mock('@jellyfin/sdk/lib/utils/api/user-library-api', () => ({
   getUserLibraryApi: () => ({
     getItem: mockGetItem,
+    getLocalTrailers: mockGetLocalTrailers,
     markFavoriteItem: mockMarkFavoriteItem,
     unmarkFavoriteItem: mockUnmarkFavoriteItem,
   }),
@@ -33,6 +35,7 @@ jest.mock('@jellyfin/sdk/lib/utils/api/playstate-api', () => ({
 import {
   fetchItem,
   fetchSimilarItems,
+  fetchLocalTrailers,
   fetchPersonCredits,
   fetchCollectionItems,
   fetchSeasons,
@@ -65,6 +68,14 @@ describe('fetchSimilarItems', () => {
   it('defaults to an empty array when Items is missing', async () => {
     mockGetSimilarItems.mockResolvedValue({ data: {} });
     expect(await fetchSimilarItems('user-1', 'item-1')).toEqual([]);
+  });
+});
+
+describe('fetchLocalTrailers', () => {
+  it('returns the trailer items directly (not wrapped in an Items envelope)', async () => {
+    mockGetLocalTrailers.mockResolvedValue({ data: [{ Id: 'trailer-1' }] });
+    expect(await fetchLocalTrailers('user-1', 'item-1')).toEqual([{ Id: 'trailer-1' }]);
+    expect(mockGetLocalTrailers).toHaveBeenCalledWith({ itemId: 'item-1', userId: 'user-1' });
   });
 });
 

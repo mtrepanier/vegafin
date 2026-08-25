@@ -33,12 +33,16 @@ Phase 0's scaffold (navigation graph, auth/session, theming) is done, and Phase 
   got crowded out whenever a same-series "next up" entry happened to load first — split apart
   to match the server's own `/Items/Resume` and `/Shows/NextUp` results directly), one
   Recently Added row per library — rather than Kotlin's user-configurable row settings, which
-  is Phase 2 territory. See [Home screen](#home-screen-homescreentsx-homeherotsx-homeherobackdroptsx) below.
+  is Phase 2 territory. See [Home screen](#home-screen-homescreentsx-homeherotsx) below.
 - **Library grid/list browsing** (`FilteredCollection`/`ItemGrid`/`MoreHomeRow`/`Favorites`),
   with sort and a grid/list view toggle.
 - **Detail pages** for Movie, Episode, Collection (box set), and Person, plus a full
   binge-style `SeriesOverview` page (season tabs + focused-episode header/footer + episode row)
   for series browsing generally — Phase 1 didn't build the classic non-binge `SeriesDetails`.
+  Movie detail matches the Home screen's hero-style look (full-bleed backdrop, logo, per-type
+  info line, icon-only-until-focused action buttons including Trailer) — see [Movie
+  detail](#movie-detail-moviedetailtsx-detailactionbuttonstsx) below; Episode/Collection/Person
+  detail still use the earlier plain layout.
 - **Core playback**: `negotiatePlayback` always forces server-side HLS transcoding (see the
   correction below for why direct play was dropped), resume position, 5s progress reporting,
   full remote-control input (play/pause, fast-forward/rewind, back, all confirmed working on
@@ -316,18 +320,50 @@ Home's very top.
 - **Scrolling**: the row list (fixed items + every library) is wrapped in a `ScrollView`
   rather than a plain `View`, so a long library list scrolls instead of silently overflowing
   past the bottom of the screen with no way to reach the cut-off rows.
-- **Goes transparent behind the Home hero**: the rail's own background is normally
-  `colors.surface`, but turns transparent while the Home screen has a focused item to show a
-  backdrop for, so that backdrop (rendered above this whole navigator - see [Home
-  screen](#home-screen-homescreentsx-homeherotsx-homeherobackdroptsx) below) shows through
-  behind the icons instead of being hidden behind an opaque rail.
+- **Goes transparent behind a screen's backdrop**: the rail's own background is normally
+  `colors.surface`, but turns transparent while any screen has set one, so that backdrop
+  (rendered above this whole navigator - see [Full-bleed screen
+  backdrops](#full-bleed-screen-backdrops-screenbackdroptsx-screenbackdropcontextts) below)
+  shows through behind the icons instead of being hidden behind an opaque rail.
 - **No hairline border between the rail and the content pane**: `react-native-drawer-layout`
   draws one there by default for a `permanent` drawer, colored from the navigation theme's
   `colors.border` - which `App.tsx` maps straight to this app's own `colors.border`, the TV
   focus-ring color, not a chrome/divider color, so it showed up as a stray purple line down the
   screen. `screenOptions.drawerStyle` now sets `borderRightWidth: 0` to remove it.
 
-#### Home screen (`HomeScreen.tsx`, `HomeHero.tsx`, `HomeHeroBackdrop.tsx`)
+#### Full-bleed screen backdrops (`ScreenBackdrop.tsx`, `screenBackdropContext.ts`)
+
+Any screen can ask for a full-bleed backdrop image behind the *entire* screen, including the
+side nav rail, by calling `useScreenBackdrop().setItem(item)` - `HomeScreen.tsx` sets it to
+whichever card has focus, `MovieDetail.tsx` sets it once to the page's own item and clears it on
+blur (`useFocusEffect`, same pattern both screens use, since Kepler's drawer keeps inactive
+screens frozen rather than unmounted - nothing else would clear a stale backdrop on navigating
+away).
+
+- **The backdrop is a separate full-screen layer, not part of whichever screen sets it.**
+  `ScreenBackdrop.tsx` renders as a sibling *before* `Drawer.Navigator` in
+  `MainDrawerNavigator.tsx`, so it can paint behind the side nav rail and down the whole screen
+  height - nothing inside a screen's own tree can ever draw behind the rail, since the
+  `permanent`-type drawer and the screen content are laid out as side-by-side flex children. The
+  image only covers the top `HOME_HERO_BACKDROP_HEIGHT` pixels (`homeHeroLayout.ts`, taller than
+  a typical header, on purpose) before fading into a solid `colors.background` fill via a real
+  SVG `LinearGradient` (`@amazon-devices/react-native-svg`, a system-deployed Kepler library, no
+  manual linking step) - not stacked flat-opacity `View`s, which band visibly against a busy
+  image no matter how many/small the steps.
+- **Two separate opaque layers had to go transparent for any of this to actually show behind the
+  rail.** React-navigation's `Screen`/`Background` paints every `Drawer.Screen`'s whole content
+  pane by default (overridden via `sceneStyle` for the `Home` and `MediaItem` routes only -
+  `MediaItem` covers every detail page, but only `MovieDetail.tsx` currently sets a backdrop, so
+  the others just fall through to this View's own `colors.background`, same as before), and
+  `react-native-drawer-layout`'s own wrapper `Animated.View` around `drawerContent`, styled from
+  `screenOptions.drawerStyle` independently of `DrawerContent`'s own inner container - both need
+  the same conditional `backgroundColor` or one or the other paints over the backdrop regardless.
+- **A screen showing a backdrop needs no background color of its own** for the same reason
+  `HomeScreen.tsx`'s rows don't: `ScreenBackdrop.tsx`'s fade + solid fill already cover the
+  entire screen height by itself, so content can render fully transparent and let it show
+  through underneath - painting a background on top of it just covers it back up.
+
+#### Home screen (`HomeScreen.tsx`, `HomeHero.tsx`)
 
 Matches AmbientFlare/astra-tv's (a separate Jellyfin-for-Vega client tested on real Fire TV
 hardware) hero-style home page rather than the earlier plain title-and-rows layout: whichever
@@ -347,22 +383,6 @@ rows scrolling independently below it.
   scroll manually instead of via `focusItemAlignment` at all: each row's y-offset is captured
   via `onLayout` (`rowOffsetsRef`), and a card's `onFocus` scrolls to that offset -
   `scrollRowIntoView` - once per row change, not per card.
-- **The backdrop is a separate full-screen layer, not part of `HomeScreen.tsx`.**
-  `HomeHeroBackdrop.tsx` renders as a sibling *before* `Drawer.Navigator` in
-  `MainDrawerNavigator.tsx`, so it can paint behind the side nav rail and down the whole screen
-  height - nothing inside `HomeScreen.tsx`'s own tree can ever draw behind the rail, since the
-  `permanent`-type drawer and the screen content are laid out as side-by-side flex children. The
-  image only covers the top `HOME_HERO_BACKDROP_HEIGHT` pixels (`homeHeroLayout.ts`, taller than
-  the text panel on purpose) before fading into a solid `colors.background` fill via a real SVG
-  `LinearGradient` (`@amazon-devices/react-native-svg`, a system-deployed Kepler library, no
-  manual linking step) - not stacked flat-opacity `View`s, which band visibly against a busy
-  image no matter how many/small the steps. Two separate opaque layers had to go transparent for
-  any of this to actually show behind the rail: react-navigation's `Screen`/`Background`, which
-  paints every `Drawer.Screen`'s whole content pane by default (overridden for the `Home` route
-  only, via `sceneStyle`), and `react-native-drawer-layout`'s own wrapper `Animated.View` around
-  `drawerContent`, styled from `screenOptions.drawerStyle` independently of `DrawerContent`'s own
-  inner container - both need the same conditional `backgroundColor` or one or the other paints
-  over the backdrop regardless.
 - **Continue Watching/Next Up show the parent series' poster, not the episode's own image.**
   `images.ts`'s `seriesAwarePosterImageUrl` uses `SeriesId`/`SeriesPrimaryImageTag` so these rows
   match every other row's portrait-poster shape instead of an episode's landscape still, with a
@@ -370,24 +390,52 @@ rows scrolling independently below it.
   pass through to their own Primary image, no badge. Cards on this screen also render with no
   title/subtitle under the art (`PosterCard`'s `title`/`subtitle` simply aren't passed) - the
   hero already shows the focused item's identity, so repeating it under every card read as
-  clutter; other screens using `PosterCard` (library grids, `PosterRow.tsx`) keep theirs, since
-  they have no persistent hero doing that job.
+  clutter; `MovieDetail.tsx`'s "More Like This" row matches this look too now (`PosterRow`'s
+  `showTitles={false}`), everywhere else `PosterRow` keeps titles since those rows have no
+  persistent hero doing that job.
 - **`formatHeroInfoLine` (`util/format.ts`) shapes its output per item type, and returns
-  segments rather than one joined string.** An episode leads with "S1 E5" plus its full air date
-  ("Jun 19, 2026"); anything else gets year/runtime/official rating instead - the episode title
-  shown above this line already covers identity, so repeating year/rating there would be
-  redundant. Both then append `CommunityRating`/`CriticRating` ("🍅 92%") when present, and the
-  time remaining ("22m left" via `formatTimeRemaining`, not a computed "Ends at" clock time) for
-  an in-progress item - computed from `UserData.PlayedPercentage` in preference to
+  segments rather than one joined string, rendered via the shared `HeroInfoLine.tsx`** (also
+  used by `MovieDetail.tsx`). An episode leads with "S1 E5" plus its full air date ("Jun 19,
+  2026"); anything else gets year/runtime/official rating instead - the episode title shown
+  above this line already covers identity, so repeating year/rating there would be redundant.
+  Both then append `CommunityRating`/`CriticRating` ("🍅 92%") when present, and the time
+  remaining ("22m left" via `formatTimeRemaining`, not a computed "Ends at" clock time) for an
+  in-progress item - computed from `UserData.PlayedPercentage` in preference to
   `PlaybackPositionTicks`, since that's the field a real `/Items/Resume` response reliably
   carries (`homeRows.ts` now also requests `Overview` and `enableUserData: true` explicitly on
   all three Home row fetches, rather than relying on Jellyfin's list-endpoint defaults). Segments
-  (`HeroInfoSegment[]`, not a pre-joined string) let `HomeHero.tsx` give the community rating's
-  star its own color/size (gold, a couple points larger than the surrounding text - a plain "★"
-  glyph renders visibly smaller than the 🍅 emoji next to it at the same nominal `fontSize`),
-  which a flat string couldn't.
+  (`HeroInfoSegment[]`, not a pre-joined string) let `HeroInfoLine.tsx` give the community
+  rating's star its own color/size (gold, a couple points larger than the surrounding text - a
+  plain "★" glyph renders visibly smaller than the 🍅 emoji next to it at the same nominal
+  `fontSize`), which a flat string couldn't.
 - **Card sizing shrank app-wide** (`theme/types.ts`'s `layout` tokens, ~20-25% smaller) to match
   Wholphin's card density - global, not Home-only, since every row/grid shares these constants.
+
+#### Movie detail (`MovieDetail.tsx`, `DetailActionButtons.tsx`)
+
+Rebuilt to match the Home screen's hero-style look rather than the earlier plain
+title-and-backdrop layout: full-bleed backdrop (see above), logo (or plain title text) plus the
+shared `HeroInfoLine`, genres, action buttons, tagline, overview, then Cast and "More Like This"
+below.
+
+- **Action buttons are icon-only until focused, then expand to an inverted light pill with the
+  label alongside the icon** - `DetailActionButtons.tsx`'s local `ActionButton`, the same
+  "collapsed until focus reveals more" shape as the side nav rail
+  (`focus/useFocusGroupExpanded.ts`), just per-button instead of per-region. Every button
+  (including Play) gets identical treatment, no separate filled-at-rest style for Play;
+  `colors.onBackground`/`colors.background` (not a literal white/black) keep the inverted pill
+  theme-aware across this app's 8 palettes. Covers Play/Resume, Trailer (only rendered when
+  `onPlayTrailer` is passed - see next bullet), Favorite, and Watched.
+- **The expanded width comes from `minWidth`/`paddingHorizontal` plus the label's own content,
+  not from a fixed `width: 44` overridden with `width: undefined` when focused** - the latter
+  didn't reliably override the already-computed layout on-device, leaving the button visibly
+  focused (color changed correctly) but stuck circular with no room for the label to show.
+- **Trailer plays through this app's own player, not an external link.** Jellyfin items also
+  carry `RemoteTrailers` (external URLs - YouTube, etc.), but this app has no in-app way to open
+  one; `item.LocalTrailerCount` (already on the item, no extra fetch needed just to know whether
+  to show the button) instead gates a local trailer file, fetched on press
+  (`detail.ts`'s `fetchLocalTrailers`) and played through the normal `Playback` route like any
+  other item.
 
 ### Auth/session
 
@@ -498,16 +546,16 @@ scoped to the **service/business-logic layer**, not screens or components:
 
 - Auth/session (`ServerRepository`), server URL scheme resolution/probing (`serverUrl`,
   `JellyfinClient`), the Jellyfin API layer (`playback` negotiation + progress reporting,
-  `homeRows` including the Continue Watching/Next Up split, `library`, `detail`, `images`
-  including the Home hero's series-aware poster/logo fallbacks and the side nav's avatar
-  lookup, `episodeBadge`'s "E5" corner-badge labeling, `libraryIconName`'s CollectionType→icon
-  mapping, the `ItemPager` pagination hook), the pure formatting helpers in `util/format.ts`
-  (including the Home hero's `formatHeroInfoLine`), `util/useCurrentTime.ts` (the hero clock's
-  interval hook), theming (`ThemeContext`), and the focus system's `useLastFocusedIndex`,
-  `usePinScrollToStart`, and `useFocusGroupExpanded` hooks (the last one backs the side nav's
-  collapse/expand-on-focus behavior - pulled out of `MainDrawerNavigator.tsx` specifically so
-  it has an independent test rather than only being exercised as part of the nav component
-  itself).
+  `homeRows` including the Continue Watching/Next Up split, `library`, `detail` including
+  `fetchLocalTrailers`, `images` including the hero's series-aware poster/logo fallbacks and the
+  side nav's avatar lookup, `episodeBadge`'s "E5" corner-badge labeling, `libraryIconName`'s
+  CollectionType→icon mapping, the `ItemPager` pagination hook), the pure formatting helpers in
+  `util/format.ts` (including the shared `formatHeroInfoLine`), `util/useCurrentTime.ts` (the
+  hero clock's interval hook), theming (`ThemeContext`), and the focus system's
+  `useLastFocusedIndex`, `usePinScrollToStart`, and `useFocusGroupExpanded` hooks (the last one
+  backs the side nav's collapse/expand-on-focus behavior - pulled out of
+  `MainDrawerNavigator.tsx` specifically so it has an independent test rather than only being
+  exercised as part of the nav component itself).
 - `test/thirdPartyPatches/jellyfinSdkSearchParams.test.ts` — a regression test for the patched
   `@jellyfin/sdk` dependency itself (see the URL/URLSearchParams gotcha above). Pins the
   patch's own input/output contract; can't reproduce the platform bug it fixes, since Jest
@@ -551,22 +599,25 @@ runner.
 src/
   App.tsx                     Root component: theme + session bootstrap + navigator switch
   navigation/                 Route graph (mirrors ui/nav/Destination.kt), navigateToItem.ts,
-                               homeBackdropContext.ts (Home hero state shared with the side nav)
+                               screenBackdropContext.ts (full-bleed backdrop state shared with
+                               the side nav - see Full-bleed screen backdrops above)
   theme/                      Color palettes + ThemeContext (mirrors ui/theme/) + layout tokens
   focus/                      FocusGroup.tsx, useLastFocusedIndex.ts, usePinScrollToStart.ts,
                                useFocusGroupExpanded.ts - see Focus system above
-  util/                       format.ts (incl. the Home hero's formatHeroInfoLine),
+  util/                       format.ts (incl. the shared formatHeroInfoLine),
                                useCurrentTime.ts (hero clock), uuid.ts
   services/
     jellyfin/                 JellyfinClient.ts (@jellyfin/sdk wrapper), images.ts, ItemPager.ts,
                                homeRows.ts, library.ts, detail.ts, playback.ts, libraryIcons.ts,
                                episodeBadge.ts
     storage/ServerRepository.ts   Session/auth (mirrors data/ServerRepository.kt)
-  components/                 ItemRow/ItemGrid/PosterRow, cards/, Clock.tsx (Home hero's
-                               top-right clock), IconButton.tsx
+  components/                 ItemRow/ItemGrid/PosterRow, cards/, Clock.tsx (hero top-right
+                               clock), HeroInfoLine.tsx (shared rating/info line - see Home
+                               screen above), IconButton.tsx
   screens/
-    HomeScreen.tsx, HomeHero.tsx, HomeHeroBackdrop.tsx, homeHeroLayout.ts (shared hero height),
-    FavoritesScreen.tsx, SeriesOverviewScreen.tsx, MediaItemScreen.tsx
+    HomeScreen.tsx, HomeHero.tsx, ScreenBackdrop.tsx (full-bleed backdrop layer, shared with
+    MovieDetail), homeHeroLayout.ts (shared hero/backdrop sizing), FavoritesScreen.tsx,
+    SeriesOverviewScreen.tsx, MediaItemScreen.tsx
     library/                  FilteredCollection/ItemGrid/MoreHomeRow screens
     detail/                   Movie/Episode/Collection/Person detail, series/ (SeriesOverview parts)
     playback/                 PlaybackScreen, PlaybackListScreen (KeplerVideoSurfaceView + ShakaPlayer)

@@ -11,22 +11,24 @@ interface Props {
 }
 
 /**
- * The Home hero's background image, rendered at `MainDrawerNavigator` level as a full-bleed
- * layer behind the *entire* screen - including the side nav rail, which goes transparent while
- * this is showing (see `MainDrawerNavigator.tsx`) - rather than inside `HomeScreen.tsx` itself,
- * which only occupies the content pane to the nav's right and so could never draw behind it.
+ * A screen's background image, rendered at `MainDrawerNavigator` level as a full-bleed layer
+ * behind the *entire* screen - including the side nav rail, which goes transparent while this
+ * is showing (see `MainDrawerNavigator.tsx`) - rather than inside the screen itself, which only
+ * occupies the content pane to the nav's right and so could never draw behind it. Driven by
+ * `navigation/screenBackdropContext.ts`: `HomeScreen.tsx` sets it to whichever card has focus,
+ * `MovieDetail.tsx` sets it to the page's own item.
  *
  * Fills the whole screen height, not just the image itself: the photo only covers the top
  * `HOME_HERO_BACKDROP_HEIGHT` pixels, followed by a solid `colors.background` fill for
- * whatever's below (usually the rows), with a genuine SVG `LinearGradient` fading continuously
- * between the two - not the stacked flat-opacity `View`s an earlier version used to fake one.
- * That approach was visibly banded no matter how many steps it used (each step is a hard-edged
- * rectangle, not an interpolated ramp, and it reads as such against a busy image) - a real
- * gradient was the fix, not more/smaller bands. `@amazon-devices/react-native-svg` is already a
- * system-deployed Kepler library (see its own `README.kepler.md` - no manual linking needed,
- * unlike the icon-fonts asset gotcha), so this doesn't carry that same native-module risk.
+ * whatever's below, with a genuine SVG `LinearGradient` fading continuously between the two -
+ * not stacked flat-opacity `View`s, an earlier version's approach to fake one. That was visibly
+ * banded no matter how many steps it used (each step is a hard-edged rectangle, not an
+ * interpolated ramp, and it reads as such against a busy image) - a real gradient was the fix,
+ * not more/smaller bands. `@amazon-devices/react-native-svg` is already a system-deployed
+ * Kepler library (see its own `README.kepler.md` - no manual linking needed, unlike the
+ * icon-fonts asset gotcha), so this doesn't carry that same native-module risk.
  */
-export function HomeHeroBackdrop({ item }: Props) {
+export function ScreenBackdrop({ item }: Props) {
   const { colors } = useTheme();
   if (!item) {
     return null;

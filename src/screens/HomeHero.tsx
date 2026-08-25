@@ -7,6 +7,7 @@ import { layout } from '../theme/types';
 import { formatHeroInfoLine } from '../util/format';
 import { itemOrParentLogoImageUrl } from '../services/jellyfin/images';
 import { Clock } from '../components/Clock';
+import { HeroInfoLine } from '../components/HeroInfoLine';
 import { HOME_HERO_CONTENT_HEIGHT } from './homeHeroLayout';
 
 interface Props {
@@ -17,10 +18,10 @@ interface Props {
  * The Home hero's foreground: whichever card currently has focus gets a logo standing in for a
  * text title when one exists, the episode's own title right below it (episodes only - a movie
  * has nothing else to show there, its title/logo already says everything), an info line (see
- * `formatHeroInfoLine` for the per-type shape), and a 2-line overview, plus the top-right clock.
- * Pinned in place over `HomeHeroBackdrop.tsx`'s image (rendered separately, one level up, so it
- * can go full-bleed behind the side nav) rather than scrolling away with the rows below - see
- * `HomeScreen.tsx`.
+ * `formatHeroInfoLine` for the per-type shape, rendered via the shared `HeroInfoLine`), and a
+ * 2-line overview, plus the top-right clock. Pinned in place over `ScreenBackdrop.tsx`'s image
+ * (rendered separately, one level up, so it can go full-bleed behind the side nav) rather than
+ * scrolling away with the rows below - see `HomeScreen.tsx`.
  */
 export function HomeHero({ item }: Props) {
   const { colors } = useTheme();
@@ -47,25 +48,10 @@ export function HomeHero({ item }: Props) {
             {episodeTitle}
           </Text>
         ) : null}
-        {infoSegments.length > 0 ? (
-          // 2 lines, not 1 - an episode's "S1 E5 · <full date>" plus ratings plus the
-          // remaining-time suffix can still run long enough at this font size/width to need the
-          // second line rather than truncating away whichever section comes last.
-          <Text numberOfLines={2} style={[styles.infoLine, { color: colors.onSurfaceVariant }]}>
-            {infoSegments.map((segment, index) => (
-              <Text key={index}>
-                {index > 0 ? '   ·   ' : ''}
-                {segment.kind === 'communityRating' ? (
-                  <>
-                    <Text style={styles.star}>★</Text> {segment.value}
-                  </>
-                ) : (
-                  segment.value
-                )}
-              </Text>
-            ))}
-          </Text>
-        ) : null}
+        {/* 2 lines, not 1 - an episode's "S1 E5 · <full date>" plus ratings plus the
+            remaining-time suffix can still run long enough at this font size/width to need the
+            second line rather than truncating away whichever section comes last. */}
+        <HeroInfoLine segments={infoSegments} color={colors.onSurfaceVariant} fontSize={17} numberOfLines={2} />
         {item.Overview ? (
           <Text numberOfLines={2} style={[styles.overview, { color: colors.onSurface }]}>
             {item.Overview}
@@ -105,17 +91,6 @@ const styles = StyleSheet.create({
   episodeTitle: {
     fontSize: 20,
     fontWeight: '700',
-  },
-  infoLine: {
-    fontSize: 17,
-    fontWeight: '700',
-  },
-  star: {
-    // Slightly larger than the surrounding text - a plain "★" glyph renders visibly smaller
-    // than the 🍅 emoji next to it at the same fontSize, so matching the numeric size wasn't
-    // enough to actually look the same size.
-    fontSize: 19,
-    color: '#FFC107',
   },
   overview: {
     fontSize: 14,

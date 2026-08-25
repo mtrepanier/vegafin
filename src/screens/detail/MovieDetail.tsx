@@ -1,14 +1,17 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect } from '@amazon-devices/react-navigation__native';
 import { PersonKind } from '@jellyfin/sdk/lib/generated-client/models/person-kind';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import { useTheme } from '../../theme/ThemeContext';
 import { layout } from '../../theme/types';
 import { usePinScrollToStart } from '../../focus/usePinScrollToStart';
 import { useCurrentUser } from '../../services/storage/ServerRepositoryContext';
-import { fetchItem, fetchSimilarItems, setFavorite, setWatched } from '../../services/jellyfin/detail';
-import { backdropImageUrl } from '../../services/jellyfin/images';
-import { formatQuickDetails, ticksToMs } from '../../util/format';
+import { useScreenBackdrop } from '../../navigation/screenBackdropContext';
+import { fetchItem, fetchLocalTrailers, fetchSimilarItems, setFavorite, setWatched } from '../../services/jellyfin/detail';
+import { itemOrParentLogoImageUrl } from '../../services/jellyfin/images';
+import { formatHeroInfoLine, ticksToMs } from '../../util/format';
+import { HeroInfoLine } from '../../components/HeroInfoLine';
 import { PosterRow } from '../../components/PosterRow';
 import { DetailActionButtons } from './DetailActionButtons';
 import { CastRow } from './CastRow';
@@ -29,18 +32,34 @@ export function MovieDetail({ itemId, navigation }: Props) {
   const userId = currentUser?.user.id;
   const [item, setItem] = useState<BaseItemDto | null>(null);
   const [similar, setSimilar] = useState<BaseItemDto[]>([]);
+  const { setItem: setBackdropItem } = useScreenBackdrop();
 
   useEffect(() => {
     if (!userId) {
       return;
     }
     let cancelled = false;
-    fetchItem(userId, itemId).then((data) => !cancelled && setItem(data));
+    fetchItem(userId, itemId).then((data) => {
+      if (!cancelled) {
+        setItem(data);
+        setBackdropItem(data);
+      }
+    });
     fetchSimilarItems(userId, itemId).then((data) => !cancelled && setSimilar(data));
     return () => {
       cancelled = true;
     };
-  }, [userId, itemId]);
+  }, [userId, itemId, setBackdropItem]);
+
+  // Same reasoning as HomeScreen.tsx: the backdrop lives outside this screen (rendered at
+  // MainDrawerNavigator level so it can go full-bleed behind the side nav), and Kepler's
+  // drawer keeps inactive screens frozen rather than unmounted, so nothing here would
+  // otherwise clear it on navigating away.
+  useFocusEffect(
+    useCallback(() => {
+      return () => setBackdropItem(null);
+    }, [setBackdropItem]),
+  );
 
   if (!item || !userId) {
     return (
@@ -51,11 +70,21 @@ export function MovieDetail({ itemId, navigation }: Props) {
   }
 
   const cast = (item.People ?? []).filter((p) => p.Type === PersonKind.Actor).slice(0, 20);
-  const backdropUri = backdropImageUrl(item, 1280);
+  const logoUri = itemOrParentLogoImageUrl(item, 400);
+  const infoSegments = formatHeroInfoLine(item);
+  const hasTrailer = (item.LocalTrailerCount ?? 0) > 0;
 
   const handlePlay = () => {
     const positionMs = item.UserData?.PlaybackPositionTicks ? ticksToMs(item.UserData.PlaybackPositionTicks) : 0;
     navigation.navigate('Playback', { itemId, positionMs });
+  };
+
+  const handlePlayTrailer = async () => {
+    const trailers = await fetchLocalTrailers(userId, itemId);
+    const trailer = trailers[0];
+    if (trailer?.Id) {
+      navigation.navigate('Playback', { itemId: trailer.Id, positionMs: 0 });
+    }
   };
 
   const handleToggleFavorite = async () => {
@@ -70,19 +99,21 @@ export function MovieDetail({ itemId, navigation }: Props) {
     await setWatched(userId, itemId, watched);
   };
 
-  const scrimStyle = [StyleSheet.absoluteFill, { backgroundColor: colors.background, opacity: 0.45 }];
   return (
-    <ScrollView ref={scrollRef} focusItemAlignment="start" style={{ backgroundColor: colors.background }}>
-      {backdropUri ? (
-        <View style={styles.backdrop}>
-          <Image source={{ uri: backdropUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-          <View style={scrimStyle} />
-        </View>
-      ) : null}
-
+    // No background color here, and no local backdrop image - ScreenBackdrop.tsx (rendered
+    // full-bleed at MainDrawerNavigator level, driven by the useScreenBackdrop() call above)
+    // already covers the whole screen behind this content: its fade for the header area below,
+    // then a solid colors.background fill for everything past that, the same way Home's rows
+    // rely on it rather than painting their own background - see the README's Home screen
+    // section for why a screen's own background would just cover the backdrop back up.
+    <ScrollView ref={scrollRef} focusItemAlignment="start">
       <View style={styles.content}>
-        <Text style={[styles.title, { color: colors.onBackground }]}>{item.Name}</Text>
-        <Text style={[styles.quickDetails, { color: colors.onSurfaceVariant }]}>{formatQuickDetails(item)}</Text>
+        {logoUri ? (
+          <Image source={{ uri: logoUri }} style={styles.logo} resizeMode="contain" />
+        ) : (
+          <Text style={[styles.title, { color: colors.onBackground }]}>{item.Name}</Text>
+        )}
+        <HeroInfoLine segments={infoSegments} color={colors.onSurfaceVariant} fontSize={16} numberOfLines={2} />
         {item.Genres?.length ? (
           <Text style={[styles.genres, { color: colors.onSurfaceVariant }]}>{item.Genres.join(', ')}</Text>
         ) : null}
@@ -93,6 +124,7 @@ export function MovieDetail({ itemId, navigation }: Props) {
             onPlay={handlePlay}
             onToggleFavorite={handleToggleFavorite}
             onToggleWatched={handleToggleWatched}
+            onPlayTrailer={hasTrailer ? handlePlayTrailer : undefined}
           />
         </View>
 
@@ -103,7 +135,7 @@ export function MovieDetail({ itemId, navigation }: Props) {
       </View>
 
       <CastRow people={cast} navigation={navigation} autoFocus={false} />
-      <PosterRow title="More Like This" items={similar} navigation={navigation} autoFocus={false} />
+      <PosterRow title="More Like This" items={similar} navigation={navigation} autoFocus={false} showTitles={false} />
     </ScrollView>
   );
 }
@@ -114,21 +146,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backdrop: {
-    width: '100%',
-    aspectRatio: 16 / 9,
-  },
   content: {
-    padding: layout.contentPadding,
+    paddingHorizontal: layout.contentPadding,
+    paddingTop: 64,
+    paddingBottom: layout.contentPadding,
     maxWidth: 900,
     gap: 8,
+  },
+  logo: {
+    width: 160,
+    height: 64,
+    alignSelf: 'flex-start',
   },
   title: {
     fontSize: 32,
     fontWeight: '700',
-  },
-  quickDetails: {
-    fontSize: 14,
   },
   genres: {
     fontSize: 14,
@@ -140,9 +172,11 @@ const styles = StyleSheet.create({
   tagline: {
     fontStyle: 'italic',
     fontSize: 14,
+    maxWidth: 450,
   },
   overview: {
     fontSize: 15,
     lineHeight: 22,
+    maxWidth: 450,
   },
 });

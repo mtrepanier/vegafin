@@ -25,6 +25,14 @@ export async function fetchSimilarItems(userId: string, itemId: string, limit = 
   return data.Items ?? [];
 }
 
+/** Locally-hosted trailer files for an item (`item.LocalTrailerCount` says whether any exist,
+ * without needing this call up front) - playable through this app's own player, unlike
+ * `RemoteTrailers` (external URLs), which this app has no in-app way to open. */
+export async function fetchLocalTrailers(userId: string, itemId: string): Promise<BaseItemDto[]> {
+  const { data } = await getUserLibraryApi(jellyfinClient.api).getLocalTrailers({ itemId, userId });
+  return data;
+}
+
 /** A person's movie/series/episode credits (PersonPage.kt's three conditional rows). */
 export async function fetchPersonCredits(
   userId: string,
