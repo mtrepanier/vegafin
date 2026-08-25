@@ -1,0 +1,152 @@
+import type { TranslationKey } from './en';
+
+/**
+ * `Record<TranslationKey, string>` against `en.ts` - TypeScript enforces every English key has
+ * a French value here, so an untranslated string can't silently ship without a deliberate
+ * fallback decision.
+ */
+export const fr: Record<TranslationKey, string> = {
+  // Side nav (MainDrawerNavigator.tsx)
+  'nav.search': 'Rechercher',
+  'nav.home': 'Accueil',
+  'nav.favorites': 'Favoris',
+  'nav.settings': 'Paramètres',
+
+  // Reused across multiple screens
+  'common.play': 'Lecture',
+  'common.resume': 'Reprendre',
+  'common.playAll': 'Tout lire',
+  'common.shuffle': 'Aléatoire',
+  'common.trailer': 'Bande-annonce',
+  'common.trailers': 'Bandes-annonces',
+  'common.favorite': 'Favori',
+  'common.markAsWatched': 'Marquer comme vu',
+  'common.markAsUnwatched': 'Marquer comme non vu',
+  'common.castAndCrew': 'Distribution',
+  'common.moreLikeThis': 'Suggestions',
+  'common.guestStars': 'Invités',
+  'common.movies': 'Films',
+  'common.tvShows': 'Séries',
+  'common.episodes': 'Épisodes',
+  'common.viewAll': 'Tout voir',
+  'common.back': 'Retour',
+  'common.close': 'Fermer',
+  'common.cancel': 'Annuler',
+  'common.off': 'Désactivés',
+  'common.user': 'Utilisateur',
+  'common.library': 'Bibliothèque',
+  'common.unknownServer': 'Serveur inconnu',
+  'common.trailerFallback': 'Bande-annonce {number}',
+
+  // Settings screen
+  'settings.title': 'Paramètres',
+  'settings.section.interface': 'Interface',
+  'settings.section.playback': 'Lecture',
+  'settings.section.userSettings': 'Préférences utilisateur',
+  'settings.section.about': 'À propos',
+  'settings.showClock': "Afficher l'horloge",
+  'settings.playThemeMusic': 'Musique thématique',
+  'settings.themeMusic.disabled': 'Désactivée',
+  'settings.themeMusic.low': 'Faible',
+  'settings.themeMusic.medium': 'Moyenne',
+  'settings.themeMusic.high': 'Élevée',
+  'settings.themeMusic.full': 'Maximale',
+  'settings.hideControlsAfter': 'Masquer les commandes après',
+  'settings.skipForward': 'Avance rapide',
+  'settings.skipBackward': 'Retour rapide',
+  'settings.showNextUp': 'Afficher "À suivre"',
+  'settings.showNextUp.atEnd': 'À la fin de la lecture',
+  'settings.showNextUp.duringCredits': 'Pendant le générique',
+  'settings.showNextUp.never': 'Jamais',
+  'settings.autoPlayNextUp': 'Lecture automatique du suivant',
+  'settings.interfaceLanguage': "Langue de l'interface",
+  'settings.language.system': "Langue de l'appareil",
+  'settings.language.en': 'English',
+  'settings.language.fr': 'Français',
+  'settings.version': 'Version',
+  'settings.updates': 'Mises à jour',
+  'settings.updates.notAvailable': 'Pas encore disponible',
+  'settings.seconds': '{value} s',
+
+  // Time/date formatting (util/format.ts)
+  'time.left': 'Il reste {value}',
+  'time.hoursMinutes': '{hours} h {minutes} min',
+  'time.minutes': '{minutes} min',
+  'season.numbered': 'Saison {number}',
+  'season.specials': 'Spéciaux',
+  'season.fallback': 'Saison',
+  // "S/E" kept abbreviated rather than spelled out ("Saison 1 Épisode 5") - matches how French
+  // Jellyfin/streaming clients commonly render this, and keeps it short enough for the hero's
+  // one-line info row the same way the English "S1 E5" does.
+  'episode.badge': 'É{number}',
+  'episode.seasonEpisode': 'S{season} É{episode}',
+
+  // Detail pages (Movie/Collection/Person/Series)
+  'detail.person.bornOn': 'Né(e) le {date}',
+  'detail.person.diedOn': 'Décédé(e) le {date}',
+
+  // Playback
+  'player.preparingPlayback': 'Préparation de la lecture...',
+  'player.preparingPlaybackAttempt': 'Préparation de la lecture... (tentative {attempt})',
+  'player.startingVideoAttempt': 'Démarrage de la vidéo... (tentative {attempt})',
+  'player.buffering': 'Mise en mémoire tampon...',
+  'player.stalledBuffering': 'Lecture interrompue. Mise en mémoire tampon...',
+  'player.playbackFailed': 'Échec de la lecture.',
+  'player.audio': 'Audio',
+  'player.subtitles': 'Sous-titres',
+  'player.trackFallback': 'Piste {number}',
+  'player.shakaTimeout': "Le délai de lecture a expiré après {seconds} s.",
+  'player.streamEngineError': 'Erreur du moteur de diffusion {code} (catégorie {category})',
+
+  // Setup / sign-in
+  'setup.addServer': 'Ajouter un serveur Jellyfin',
+  'setup.connect': 'Connexion',
+  'setup.enterServerAddress': "Entrez l'adresse d'un serveur.",
+  'setup.unableToReachServer': 'Impossible de joindre le serveur.',
+  'setup.username': "Nom d'utilisateur",
+  'setup.password': 'Mot de passe',
+  'setup.signIn': 'Se connecter',
+  'setup.signInWithCode': 'Se connecter avec un code',
+  'setup.quickConnectInstructions':
+    'Sur votre téléphone ou ordinateur, ouvrez Jellyfin, allez dans Connexion rapide et entrez ce code.',
+  'setup.couldNotStartQuickConnect': 'Impossible de démarrer la connexion rapide : {detail}',
+  'setup.quickConnectSignInFailed': 'Échec de la connexion rapide : {detail}',
+  'setup.loginFailed': 'Échec de la connexion',
+  'setup.enterPinFor': 'Entrez le NIP pour {name}',
+  'setup.incorrectPin': 'NIP incorrect',
+  'setup.serverDidNotReturnUserId': "Le serveur n'a pas retourné d'identifiant utilisateur",
+  'setup.serverDidNotReturnAccessToken': "Le serveur n'a pas retourné de jeton d'accès",
+
+  // Library browsing
+  'library.sortPrefix': 'Trier : {label}',
+  'library.grid': 'Grille',
+  'library.list': 'Liste',
+  'library.browse': 'Parcourir',
+  'library.sort.name': 'Nom',
+  'library.sort.dateAdded': "Date d'ajout",
+  'library.sort.releaseDate': 'Date de sortie',
+  'library.sort.rating': 'Évaluation',
+
+  // Home rows
+  'home.continueWatching': 'Continuer à regarder',
+  'home.nextUp': 'À suivre',
+  'home.latestLibrary': 'Récemment ajoutés : {libraryName}',
+
+  // Placeholder screens not built yet (Phase 2/3) - see StubScreen.tsx
+  'stub.phase1': 'Phase 1',
+  'stub.phase2': 'Phase 2',
+  'stub.phase3': 'Phase 3',
+  'stub.homeSettings': "Paramètres de l'accueil",
+  'stub.subtitleSettings': 'Paramètres des sous-titres',
+  'stub.userPreferences': "Préférences de l'utilisateur",
+  'stub.debug': 'Débogage',
+  'stub.mediaItem': 'Élément multimédia',
+  'stub.recordings': 'Enregistrements',
+  'stub.slideshow': 'Diaporama',
+  'stub.updateApp': "Mettre à jour l'application",
+  'stub.licenses': 'Licences',
+  'stub.nowPlaying': 'Lecture en cours',
+  'stub.discover': 'Découvrir',
+  'stub.discoveredItem': 'Élément découvert',
+  'stub.discoverMoreResults': 'Plus de résultats',
+};

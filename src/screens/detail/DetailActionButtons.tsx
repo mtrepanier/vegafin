@@ -4,6 +4,7 @@ import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import { useTheme } from '../../theme/ThemeContext';
 import { FocusGroup } from '../../focus/FocusGroup';
+import { useT } from '../../i18n/useTranslation';
 
 interface ActionButtonProps {
   icon: string;
@@ -100,6 +101,7 @@ export function DetailActionButtons({
   extra,
   autoFocus = true,
 }: Props) {
+  const t = useT();
   const resumeTicks = item.UserData?.PlaybackPositionTicks ?? 0;
 
   const playRef = useRef<View>(null);
@@ -118,22 +120,22 @@ export function DetailActionButtons({
       <ActionButton
         ref={playRef}
         icon="play-arrow"
-        label={resumeTicks > 0 ? 'Resume' : 'Play'}
+        label={resumeTicks > 0 ? t('common.resume') : t('common.play')}
         hasTVPreferredFocus={autoFocus}
         onPress={onPlay}
       />
       {extra}
-      {onPlayTrailer ? <ActionButton icon="movie" label="Trailer" onPress={onPlayTrailer} /> : null}
-      {onOpenTrailers ? <ActionButton icon="theaters" label="Trailers" onPress={onOpenTrailers} /> : null}
+      {onPlayTrailer ? <ActionButton icon="movie" label={t('common.trailer')} onPress={onPlayTrailer} /> : null}
+      {onOpenTrailers ? <ActionButton icon="theaters" label={t('common.trailers')} onPress={onOpenTrailers} /> : null}
       <ActionButton
         icon={item.UserData?.IsFavorite ? 'favorite' : 'favorite-border'}
-        label="Favorite"
+        label={t('common.favorite')}
         active={item.UserData?.IsFavorite}
         onPress={onToggleFavorite}
       />
       <ActionButton
         icon={item.UserData?.Played ? 'check-circle' : 'check-circle-outline'}
-        label={item.UserData?.Played ? 'Mark as Unwatched' : 'Mark as Watched'}
+        label={item.UserData?.Played ? t('common.markAsUnwatched') : t('common.markAsWatched')}
         active={item.UserData?.Played}
         onPress={onToggleWatched}
       />

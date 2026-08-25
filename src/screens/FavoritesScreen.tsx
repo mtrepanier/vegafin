@@ -1,12 +1,14 @@
 import React, { useCallback, useState } from 'react';
 import { useCurrentUser } from '../services/storage/ServerRepositoryContext';
 import { fetchLibraryPage, LIBRARY_SORT_OPTIONS, type LibrarySortField, type SortDirection } from '../services/jellyfin/library';
+import { useT } from '../i18n/useTranslation';
 import { LibraryGrid } from './library/LibraryScreens';
 
 // ui/detail/FavoritesPage.kt equivalent.
 export function FavoritesScreen() {
   const currentUser = useCurrentUser();
   const userId = currentUser?.user.id;
+  const t = useT();
   const [sort, setSort] = useState<{ sortBy: LibrarySortField; direction: SortDirection }>({
     sortBy: LIBRARY_SORT_OPTIONS[0].value,
     direction: 'Ascending',
@@ -28,7 +30,7 @@ export function FavoritesScreen() {
   }
   return (
     <LibraryGrid
-      title="Favorites"
+      title={t('nav.favorites')}
       fetchPage={fetchPage}
       sortable
       onSortChange={(sortBy, direction) => setSort({ sortBy, direction })}

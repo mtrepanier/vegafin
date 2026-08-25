@@ -6,6 +6,8 @@ import { CollectionType } from '@jellyfin/sdk/lib/generated-client/models/collec
 import { ItemFields } from '@jellyfin/sdk/lib/generated-client/models/item-fields';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import { jellyfinClient } from './JellyfinClient';
+import { translate } from '../../i18n/translate';
+import type { Language } from '../../i18n/translations';
 import type { HomeRowRef } from '../../navigation/types';
 
 const ROW_LIMIT = 20;
@@ -48,11 +50,11 @@ export async function fetchUserLibraries(userId: string): Promise<BaseItemDto[]>
  * client-side SeriesId dedup, but that just meant genuinely in-progress items got crowded out
  * whenever a same-series "next up" entry happened to load first.
  */
-export async function fetchDefaultHomeRowConfigs(userId: string): Promise<HomeRowConfig[]> {
+export async function fetchDefaultHomeRowConfigs(userId: string, language: Language): Promise<HomeRowConfig[]> {
   const libraries = await fetchUserLibraries(userId);
   const configs: HomeRowConfig[] = [
-    { key: 'continueWatching', kind: 'continueWatching', title: 'Continue Watching' },
-    { key: 'nextUp', kind: 'nextUp', title: 'Next Up' },
+    { key: 'continueWatching', kind: 'continueWatching', title: translate(language, 'home.continueWatching') },
+    { key: 'nextUp', kind: 'nextUp', title: translate(language, 'home.nextUp') },
   ];
 
   for (const library of libraries) {
@@ -62,7 +64,7 @@ export async function fetchDefaultHomeRowConfigs(userId: string): Promise<HomeRo
     configs.push({
       key: `recentlyAdded:${library.Id}`,
       kind: 'recentlyAdded',
-      title: `Latest ${library.Name ?? ''}`.trim(),
+      title: translate(language, 'home.latestLibrary', { libraryName: library.Name ?? '' }).trim(),
       libraryId: library.Id,
     });
   }

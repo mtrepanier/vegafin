@@ -17,6 +17,7 @@ import { EpisodeRow } from './detail/series/EpisodeRow';
 import { FocusedEpisodeFooter } from './detail/series/FocusedEpisodeFooter';
 import { CastRow } from './detail/CastRow';
 import { TrailerListOverlay } from './detail/TrailerListOverlay';
+import { useT } from '../i18n/useTranslation';
 import type { AppNavigationProp, DrawerParamList } from '../navigation/types';
 
 /**
@@ -42,6 +43,7 @@ function SeriesOverviewBody({
   navigation: AppNavigationProp<'SeriesOverview'>;
 }) {
   const { colors } = useTheme();
+  const t = useT();
   const scrollRef = useRef<ScrollView>(null);
   usePinScrollToStart(() => scrollRef.current?.scrollTo({ y: 0, animated: false }));
   const { itemId, seasonEpisode } = route.params;
@@ -206,8 +208,8 @@ function SeriesOverviewBody({
         ) : null}
 
         <CastRow people={cast} navigation={navigation} autoFocus={false} />
-        <CastRow title="Guest Stars" people={guestStars} navigation={navigation} autoFocus={false} />
-        <PosterRow title="More Like This" items={similar} navigation={navigation} autoFocus={false} showTitles={false} />
+        <CastRow title={t('common.guestStars')} people={guestStars} navigation={navigation} autoFocus={false} />
+        <PosterRow title={t('common.moreLikeThis')} items={similar} navigation={navigation} autoFocus={false} showTitles={false} />
       </ScrollView>
 
       {trailersOpen ? <TrailerListOverlay trailers={remoteTrailers} onClose={() => setTrailersOpen(false)} /> : null}

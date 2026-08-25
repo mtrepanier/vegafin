@@ -15,6 +15,7 @@ import { DetailActionButtons } from './DetailActionButtons';
 import { DetailHero } from './DetailHero';
 import { CastRow } from './CastRow';
 import { TrailerListOverlay } from './TrailerListOverlay';
+import { useT } from '../../i18n/useTranslation';
 import type { AppNavigationProp, DrawerParamList } from '../../navigation/types';
 
 interface Props {
@@ -26,6 +27,7 @@ interface Props {
 // composable for those in this port; same layout applies cleanly).
 export function MovieDetail({ itemId, navigation }: Props) {
   const { colors } = useTheme();
+  const t = useT();
   const scrollRef = useRef<ScrollView>(null);
   usePinScrollToStart(() => scrollRef.current?.scrollTo({ y: 0, animated: false }));
   const currentUser = useCurrentUser();
@@ -129,7 +131,7 @@ export function MovieDetail({ itemId, navigation }: Props) {
         </View>
 
         <CastRow people={cast} navigation={navigation} autoFocus={false} />
-        <PosterRow title="More Like This" items={similar} navigation={navigation} autoFocus={false} showTitles={false} />
+        <PosterRow title={t('common.moreLikeThis')} items={similar} navigation={navigation} autoFocus={false} showTitles={false} />
       </ScrollView>
 
       {trailersOpen ? <TrailerListOverlay trailers={remoteTrailers} onClose={() => setTrailersOpen(false)} /> : null}

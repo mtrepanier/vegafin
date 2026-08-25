@@ -3,6 +3,7 @@ import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base
 import { layout } from '../../../theme/types';
 import { primaryImageUrl } from '../../../services/jellyfin/images';
 import { episodeBadgeLabel } from '../../../services/jellyfin/episodeBadge';
+import { useLanguage } from '../../../i18n/useLanguage';
 import { ItemRow } from '../../../components/ItemRow';
 import { PosterCard } from '../../../components/cards/PosterCard';
 
@@ -18,6 +19,7 @@ interface Props {
  * (an "E5"-style corner badge instead, same as Home's Continue Watching/Next Up rows) - the
  * series name is already shown in this page's own hero, above the season tabs. */
 export function EpisodeRow({ episodes, onFocusEpisode, onPressEpisode, initialFocusEpisodeId }: Props) {
+  const language = useLanguage();
   const initialIndex = Math.max(
     0,
     initialFocusEpisodeId ? episodes.findIndex((episode) => episode.Id === initialFocusEpisodeId) : 0,
@@ -32,7 +34,7 @@ export function EpisodeRow({ episodes, onFocusEpisode, onPressEpisode, initialFo
         <PosterCard
           uri={primaryImageUrl(episode, layout.landscape.width)}
           metrics={layout.landscape}
-          episodeBadge={episodeBadgeLabel(episode)}
+          episodeBadge={episodeBadgeLabel(episode, language)}
           watched={episode.UserData?.Played ?? false}
           favorite={episode.UserData?.IsFavorite ?? false}
           progressPercent={episode.UserData?.PlayedPercentage ?? undefined}

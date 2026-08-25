@@ -3,16 +3,17 @@ import { Animated, Pressable, StyleSheet, Text, type PressableStateCallbackType 
 import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
 import { useTheme } from '../../theme/ThemeContext';
 import { layout, type CardMetrics } from '../../theme/types';
+import { useT } from '../../i18n/useTranslation';
 
 interface Props {
   metrics?: CardMetrics;
-  label?: string;
   onPress: () => void;
 }
 
 /** Trailing "see all" card appended to a row/grid. Mirrors `ViewMoreCard.kt`/`HomePageViewMoreCard`. */
-export function ViewMoreCard({ metrics = layout.poster, label = 'View All', onPress }: Props) {
+export function ViewMoreCard({ metrics = layout.poster, onPress }: Props) {
   const { colors } = useTheme();
+  const t = useT();
   const scale = useRef(new Animated.Value(1)).current;
   const animateTo = (toValue: number) =>
     Animated.spring(scale, { toValue, useNativeDriver: true, speed: 20, bounciness: 4 }).start();
@@ -35,7 +36,7 @@ export function ViewMoreCard({ metrics = layout.poster, label = 'View All', onPr
           ]}
         >
           <Icon name="chevron-right" size={28} color={colors.onSurfaceVariant} />
-          <Text style={[styles.label, { color: colors.onSurfaceVariant }]}>{label}</Text>
+          <Text style={[styles.label, { color: colors.onSurfaceVariant }]}>{t('common.viewAll')}</Text>
         </Animated.View>
       )}
     </Pressable>

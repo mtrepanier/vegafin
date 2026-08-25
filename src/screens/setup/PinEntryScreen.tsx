@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRoute, type RouteProp } from '@amazon-devices/react-navigation__native';
 import { serverRepository } from '../../services/storage/ServerRepository';
 import { useTheme } from '../../theme/ThemeContext';
+import { useT } from '../../i18n/useTranslation';
 import type { SetupStackParamList } from '../../navigation/types';
 
 type Route = RouteProp<SetupStackParamList, 'PinEntry'>;
@@ -12,6 +13,7 @@ const DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '⌫'];
 // ui/setup/PinEntry.kt equivalent - PIN gate for a protected local profile.
 export function PinEntryScreen() {
   const { colors } = useTheme();
+  const t = useT();
   const { params } = useRoute<Route>();
   const entry = serverRepository.listServers().find((s) => s.server.id === params.serverId);
   const user = entry?.users.find((u) => u.id === params.userId);
@@ -39,9 +41,9 @@ export function PinEntryScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Text style={[styles.title, { color: colors.onBackground }]}>Enter PIN for {user?.name}</Text>
+      <Text style={[styles.title, { color: colors.onBackground }]}>{t('setup.enterPinFor', { name: user?.name ?? '' })}</Text>
       <Text style={[styles.dots, { color: colors.primary }]}>{'●'.repeat(pin.length)}</Text>
-      {error ? <Text style={{ color: colors.error }}>Incorrect PIN</Text> : null}
+      {error ? <Text style={{ color: colors.error }}>{t('setup.incorrectPin')}</Text> : null}
       <View style={styles.pad}>
         {DIGITS.map((d, i) => (
           <Pressable

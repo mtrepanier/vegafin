@@ -54,14 +54,16 @@ Phase 0's scaffold (navigation graph, auth/session, theming) is done, and Phase 
   it's not what an earlier draft of this README described.
 - **A first Settings screen** (Phase 2's first slice): Interface (Show Clock, Play Theme Music
   volume), Playback (hide-controls delay, skip forward/backward seconds, Show Next Up timing,
-  Auto Play Next Up), a placeholder User Settings section (interface language, not wired up
-  yet), and About (app version). Reachable from the side nav's last row. See
-  [Settings](#settings-settingsscreentsx) below for what's actually wired to real behavior
-  versus what's a persisted-but-inert placeholder so far.
+  Auto Play Next Up), User Settings (Interface Language), and About (app version). Reachable
+  from the side nav's last row. See [Settings](#settings-settingsscreentsx) below for what's
+  actually wired to real behavior versus what's a persisted-but-inert placeholder so far.
+- **Full English/French localization** - every user-facing string in the app, defaulting to the
+  device's own language with an override in Settings. See
+  [Internationalization](#internationalization-englishfrench) below.
 
 Still not implemented: the *behavior* behind Play Theme Music/Show Next Up/Auto Play Next Up,
-interface language switching, update checking, search, subtitle customization/delay, trickplay,
-skip intro/outro, live TV, music playback, Seerr/Jellyseerr discover. See [Roadmap](#roadmap).
+update checking, search, subtitle customization/delay, trickplay, skip intro/outro, live TV,
+music playback, Seerr/Jellyseerr discover, a third+ language. See [Roadmap](#roadmap).
 
 ### Correction: playback uses KeplerVideoSurfaceView + a vendored Shaka Player, not KeplerVideoView
 
@@ -577,12 +579,66 @@ since Settings is a bare full-screen stack push (`RootStackParamList`), not draw
   behavior. "Show Clock" (`HomeHero.tsx`) is the only other setting wired to real behavior so
   far.
 - **Play Theme Music, Show Next Up, and Auto Play Next Up persist correctly but don't drive
-  anything yet, and Interface Language/Updates are inert display rows, not fake working
-  controls.** Theme-song audio playback and an end-of-playback Next Up prompt are their own
-  separate features that haven't been built - rather than wire a setting up to nothing or guess
-  at behavior, `SettingsInertRow.tsx` renders a plain `View`, not a `Pressable`, for anything
-  without a real control behind it yet, so D-pad navigation skips it entirely instead of
-  landing on a focusable dead end.
+  anything yet, and Updates is an inert display row, not a fake working control.** Theme-song
+  audio playback and an end-of-playback Next Up prompt are their own separate features that
+  haven't been built, and there's no update-check mechanism to wire "Updates" to yet - rather
+  than wire a setting up to nothing or guess at behavior, `SettingsInertRow.tsx` renders a
+  plain `View`, not a `Pressable`, for anything without a real control behind it yet, so D-pad
+  navigation skips it entirely instead of landing on a focusable dead end. Interface Language
+  used to be one of these too, until [Internationalization](#internationalization-englishfrench)
+  below made it a real control.
+
+### Internationalization (English/French)
+
+Every user-facing string in the app goes through a hand-rolled catalog (`src/i18n/`), not
+`i18next`/`react-i18next` - only two languages are needed so far, and this platform is exotic
+enough (see the rest of this README) that a library with its own plugin ecosystem for locale
+detection, pluralization, etc. felt like more unverified surface than it was worth. Same
+reasoning as `SettingsStepper.tsx` standing in for a slider component - build the TV/platform-
+appropriate thing directly rather than pull in a library aimed at a different environment.
+
+- **`src/i18n/translations/en.ts` is the canonical catalog - `fr.ts` is typed as
+  `Record<TranslationKey, string>` against it,** so TypeScript itself fails the build if a key
+  gets added to one without the other, rather than silently falling back to English on a French
+  device. Keys are namespaced by screen/concern (`settings.*`, `nav.*`, `player.*`, `common.*`
+  for strings reused verbatim across unrelated screens - "More Like This" on both Movie detail
+  and Series overview is one key, not two), not full sentences. `translate(language, key,
+  params?)` (`translate.ts`) does simple `{placeholder}` interpolation - not full ICU
+  MessageFormat (plurals, gender) - since neither language has needed real plural rules for any
+  string used here yet.
+- **`useT()` (components/hooks) and `translate()` directly (pure functions) are the two ways to
+  consume the catalog**, both ultimately resolving a `Language` ('en'/'fr') via `useLanguage()`/
+  `resolveLanguage.ts`. `util/format.ts`, `episodeBadge.ts`, and `homeRows.ts` take an explicit
+  `language`/`t` parameter rather than calling a hook themselves, since they're plain functions
+  (some already called from other plain functions, like `formatQuickDetails` calling
+  `formatRuntime`) - `resolveLanguage.ts` and `translate.ts` have no React dependency at all,
+  so this works cleanly either way.
+- **`'system'` (the default) follows the device's own locale via Kepler's `I18nManager`, an
+  Amazon addition over stock RN's RTL-only I18nManager** (`getSystemLocale()`,
+  `addEventListener('Locale', ...)` for a live change while the app is running - both typed via
+  `src/types/react-native-augmentations.d.ts`, the same declaration-merging pattern used for
+  `focusItemAlignment` and `Pressable`'s `focused` state). `useSystemLocale.ts` wraps this
+  defensively (try/catch, falls back to `null`/English) since it's the first thing in this app
+  to call it - unverified on real hardware as of writing, same caveat as `Linking.openURL` in
+  the Trailers overlay. `resolveLanguage.ts` only matches an actual French-tagged locale
+  (`fr`, `fr-FR`, `fr-CA`, ...) to French; anything else, including a failed read, is English.
+- **Home row titles ("Continue Watching", "Latest {library}") are baked into
+  `HomeRowConfig.title` at fetch time, not resolved reactively at render time like everywhere
+  else** - `fetchDefaultHomeRowConfigs` takes a `language` param directly (same pattern as
+  `formatSeasonLabel` etc.), and `HomeScreen.tsx` adds `language` to the effect that calls it,
+  so changing the language setting while already on Home re-fetches (also re-fetching the
+  library list, a minor redundancy) rather than leaving stale-language row titles until the
+  next visit. Every other translated string in the app re-renders instantly since it's resolved
+  from `useT()` at render time - this one file trades that instant reactivity for not
+  restructuring `HomeRowConfig` to carry a translation key instead of a resolved string.
+- **Two deliberate exceptions stay untranslated.** `ServerRepository.ts`'s "Unknown server"
+  error is an internal invariant guard (`upsertUser` called for a server that was just verified
+  to exist a moment earlier) rather than a normal user-facing message, and translating it would
+  mean threading a `t` function through a service-layer class with no other i18n awareness for
+  a string that shouldn't be reachable in practice. Quick Connect's poll-failure message
+  (`UserListScreen.tsx`) translates its own static prefix but keeps the appended
+  `url:`/`body:` diagnostic dump as-is - genuinely technical debug content, not something a
+  translation would make more useful.
 
 ### Auth/session
 
@@ -701,11 +757,15 @@ scoped to the **service/business-logic layer**, not screens or components:
   `episodeBadge`'s "E5" corner-badge labeling, `libraryIconName`'s CollectionType→icon mapping,
   the `ItemPager` pagination hook), the pure formatting helpers in `util/format.ts` (including
   the shared `formatHeroInfoLine` and `formatSeasonLabel`), `util/useCurrentTime.ts` (the hero
-  clock's interval hook), theming (`ThemeContext`), and the focus system's
+  clock's interval hook), theming (`ThemeContext`), the focus system's
   `useLastFocusedIndex`, `usePinScrollToStart`, and `useFocusGroupExpanded` hooks (the last one
   backs the side nav's collapse/expand-on-focus behavior - pulled out of
   `MainDrawerNavigator.tsx` specifically so it has an independent test rather than only being
-  exercised as part of the nav component itself).
+  exercised as part of the nav component itself), and
+  [Internationalization](#internationalization-englishfrench)'s `translate`/`resolveLanguage`/
+  `useSystemLocale` (the last one spies on the real, jest-mocked-preset `I18nManager` rather
+  than replacing the whole `react-native` module - see the test file's own comment for why that
+  more obvious-looking approach trips over Kepler's `index.js` lazy-getter setup).
 - `test/thirdPartyPatches/jellyfinSdkSearchParams.test.ts` — a regression test for the patched
   `@jellyfin/sdk` dependency itself (see the URL/URLSearchParams gotcha above). Pins the
   patch's own input/output contract; can't reproduce the platform bug it fixes, since Jest
@@ -742,10 +802,11 @@ runner.
 - **Phase 2** (in progress) — A first [Settings](#settings-settingsscreentsx) screen is done
   (Interface/Playback/User Settings/About, reachable from the side nav's last row); skip
   forward/backward and the controls auto-hide delay are wired to real playback behavior, Show
-  Clock to the Home hero. Still open: the behavior behind Play Theme Music (theme-song audio),
-  Show Next Up/Auto Play Next Up (an end-of-playback prompt), interface language switching,
-  update checking, plus search, subtitle customization, trickplay, skip intro/outro,
-  multi-server/user switching UI, PIN-lock routing.
+  Clock to the Home hero, Interface Language to a full English/French localization (see
+  [Internationalization](#internationalization-englishfrench)). Still open: the behavior behind
+  Play Theme Music (theme-song audio), Show Next Up/Auto Play Next Up (an end-of-playback
+  prompt), update checking, plus search, subtitle customization, trickplay, skip intro/outro,
+  multi-server/user switching UI, PIN-lock routing, a third+ language.
 - **Phase 3** — Live TV guide + DVR, music playback (now playing/visualizer/lyrics),
   Jellyseerr discover integration, screensaver/slideshow, photo albums.
 
@@ -760,6 +821,9 @@ src/
   theme/                      Color palettes + ThemeContext (mirrors ui/theme/) + layout tokens
   focus/                      FocusGroup.tsx, useLastFocusedIndex.ts, usePinScrollToStart.ts,
                                useFocusGroupExpanded.ts - see Focus system above
+  i18n/                       translations/en.ts+fr.ts (the catalog), translate.ts,
+                               useTranslation.ts (useT), useLanguage.ts, resolveLanguage.ts,
+                               useSystemLocale.ts - see Internationalization above
   util/                       format.ts (incl. the shared formatHeroInfoLine),
                                useCurrentTime.ts (hero clock), uuid.ts
   services/
@@ -792,7 +856,9 @@ src/
   w3cmedia/                   Vendored Shaka Player + DOM/URL/fetch polyfills - see the playback
                                correction above. Excluded from lint (.eslintrc ignorePatterns).
   types/                      Ambient .d.ts augmentations (react-native-kepler/vector-icons gaps,
-                               ScrollView/FlatList's focusItemAlignment - see Focus system above)
+                               ScrollView/FlatList's focusItemAlignment - see Focus system above;
+                               I18nManager's getSystemLocale/addEventListener - see
+                               Internationalization above)
 assets/image/icon.png          512x512 app icon - see the app-icon note above
 assets/raw/fonts/MaterialIcons.ttf  Icon font asset - see the icon-fonts note above
 patches/                       patch-package diffs, applied via package.json's postinstall -

@@ -10,6 +10,7 @@ import { useScreenBackdrop } from '../navigation/screenBackdropContext';
 import { fetchDefaultHomeRowConfigs, fetchHomeRowItems, homeRowRef, type HomeRowConfig } from '../services/jellyfin/homeRows';
 import { primaryImageUrl, seriesAwarePosterImageUrl } from '../services/jellyfin/images';
 import { episodeBadgeLabel } from '../services/jellyfin/episodeBadge';
+import { useLanguage } from '../i18n/useLanguage';
 import { ItemRow } from '../components/ItemRow';
 import { PosterCard } from '../components/cards/PosterCard';
 import { HomeHero } from './HomeHero';
@@ -31,6 +32,7 @@ export function HomeScreen() {
   const navigation = useNavigation<AppNavigationProp<'Home'>>();
   const currentUser = useCurrentUser();
   const userId = currentUser?.user.id;
+  const language = useLanguage();
 
   const [rows, setRows] = useState<RowState[] | null>(null);
   const { item: focusedItem, setItem: setFocusedItem } = useScreenBackdrop();
@@ -68,7 +70,7 @@ export function HomeScreen() {
     }
     let cancelled = false;
 
-    fetchDefaultHomeRowConfigs(userId).then((configs) => {
+    fetchDefaultHomeRowConfigs(userId, language).then((configs) => {
       if (cancelled) {
         return;
       }
@@ -94,7 +96,7 @@ export function HomeScreen() {
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [userId, language]);
 
   if (!rows) {
     return (
@@ -161,7 +163,7 @@ export function HomeScreen() {
                     progressPercent={item.UserData?.PlayedPercentage ?? undefined}
                     watched={item.UserData?.Played ?? false}
                     favorite={item.UserData?.IsFavorite ?? false}
-                    episodeBadge={episodeBadgeLabel(item)}
+                    episodeBadge={episodeBadgeLabel(item, language)}
                     hasTVPreferredFocus={hasTVPreferredFocus}
                     onFocus={() => {
                       onFocus();

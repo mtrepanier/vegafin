@@ -53,6 +53,6 @@ export function MediaItemScreen() {
     case BaseItemKind.Series:
       return null; // redirecting, see effect above
     default:
-      return <StubScreen name="Media Item" phase="Phase 1" detail={JSON.stringify(route.params)} />;
+      return <StubScreen name="stub.mediaItem" phase="Phase 1" detail={JSON.stringify(route.params)} />;
   }
 }

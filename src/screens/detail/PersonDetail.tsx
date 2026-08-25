@@ -10,6 +10,8 @@ import { fetchItem, fetchPersonCredits, setFavorite } from '../../services/jelly
 import { primaryImageUrl } from '../../services/jellyfin/images';
 import { IconButton } from '../../components/IconButton';
 import { PosterRow } from '../../components/PosterRow';
+import { useT } from '../../i18n/useTranslation';
+import type { TFunction } from '../../i18n/useTranslation';
 import type { AppNavigationProp, DrawerParamList } from '../../navigation/types';
 
 interface Props {
@@ -17,16 +19,16 @@ interface Props {
   navigation: AppNavigationProp<keyof DrawerParamList>;
 }
 
-function formatBio(person: BaseItemDto): string | undefined {
+function formatBio(person: BaseItemDto, t: TFunction): string | undefined {
   const parts: string[] = [];
   if (person.PremiereDate) {
-    parts.push(`Born ${new Date(person.PremiereDate).toLocaleDateString()}`);
+    parts.push(t('detail.person.bornOn', { date: new Date(person.PremiereDate).toLocaleDateString() }));
   }
   if (person.ProductionLocations?.[0]) {
     parts.push(person.ProductionLocations[0]);
   }
   if (person.EndDate) {
-    parts.push(`Died ${new Date(person.EndDate).toLocaleDateString()}`);
+    parts.push(t('detail.person.diedOn', { date: new Date(person.EndDate).toLocaleDateString() }));
   }
   return parts.length > 0 ? parts.join(' • ') : undefined;
 }
@@ -34,6 +36,7 @@ function formatBio(person: BaseItemDto): string | undefined {
 // ui/detail/PersonPage.kt equivalent.
 export function PersonDetail({ itemId, navigation }: Props) {
   const { colors } = useTheme();
+  const t = useT();
   const scrollRef = useRef<ScrollView>(null);
   usePinScrollToStart(() => scrollRef.current?.scrollTo({ y: 0, animated: false }));
   const currentUser = useCurrentUser();
@@ -81,7 +84,7 @@ export function PersonDetail({ itemId, navigation }: Props) {
   };
 
   const photoUri = primaryImageUrl(person, layout.square.width * 2);
-  const bio = formatBio(person);
+  const bio = formatBio(person, t);
 
   return (
     <ScrollView ref={scrollRef} focusItemAlignment="start" style={{ backgroundColor: colors.background }}>
@@ -104,9 +107,9 @@ export function PersonDetail({ itemId, navigation }: Props) {
         </View>
       </View>
 
-      <PosterRow title="Movies" items={movies} navigation={navigation} autoFocus={false} />
-      <PosterRow title="TV Shows" items={series} navigation={navigation} autoFocus={false} />
-      <PosterRow title="Episodes" items={episodes} navigation={navigation} metrics={layout.landscape} autoFocus={false} />
+      <PosterRow title={t('common.movies')} items={movies} navigation={navigation} autoFocus={false} />
+      <PosterRow title={t('common.tvShows')} items={series} navigation={navigation} autoFocus={false} />
+      <PosterRow title={t('common.episodes')} items={episodes} navigation={navigation} metrics={layout.landscape} autoFocus={false} />
     </ScrollView>
   );
 }

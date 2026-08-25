@@ -9,6 +9,7 @@ import type { MediaStream } from '@jellyfin/sdk/lib/generated-client/models/medi
 import { useTheme } from '../../theme/ThemeContext';
 import { useCurrentUser } from '../../services/storage/ServerRepositoryContext';
 import { useAppSettings } from '../../services/storage/AppSettingsContext';
+import { useT } from '../../i18n/useTranslation';
 import { fetchItem, fetchPlaylistItems } from '../../services/jellyfin/detail';
 import {
   negotiatePlayback,
@@ -78,6 +79,7 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
   const userId = currentUser?.user.id;
   const keplerAppStateManager = useKeplerAppStateManager();
   const { hideControlsAfterSec, skipForwardSec, skipBackwardSec } = useAppSettings();
+  const t = useT();
 
   const [title, setTitle] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -91,7 +93,7 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
   const [durationSec, setDurationSec] = useState(0);
   // Surfaces 'waiting'/'stalled' as a visible "Buffering..." indicator - transcoded HLS
   // rebuffers on seek and on bitrate-limited connections, and silence there reads as a freeze.
-  const [statusText, setStatusText] = useState<string | null>('Preparing playback...');
+  const [statusText, setStatusText] = useState<string | null>(t('player.preparingPlayback'));
   const [showControls, setShowControls] = useState(true);
 
   // Mutable mirrors of the above, read from inside long-lived event-handler closures so those
@@ -212,7 +214,10 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
             false,
           ),
           new Promise((_resolve, reject) => {
-            setTimeout(() => reject(new Error(`Shaka load timed out after ${SHAKA_LOAD_TIMEOUT_MS}ms`)), SHAKA_LOAD_TIMEOUT_MS);
+            setTimeout(
+              () => reject(new Error(t('player.shakaTimeout', { seconds: SHAKA_LOAD_TIMEOUT_MS / 1000 }))),
+              SHAKA_LOAD_TIMEOUT_MS,
+            );
           }),
         ]);
       } catch (loadError) {
@@ -221,10 +226,10 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
         const shakaError = loadError as { code?: number; category?: number; severity?: number };
         throw loadError instanceof Error
           ? loadError
-          : new Error(`Stream engine error ${shakaError?.code ?? 'unknown'} (category ${shakaError?.category ?? '?'})`);
+          : new Error(t('player.streamEngineError', { code: shakaError?.code ?? 'unknown', category: shakaError?.category ?? '?' }));
       }
     },
-    [unloadAdaptivePlayer],
+    [unloadAdaptivePlayer, t],
   );
 
   const load = useCallback(
@@ -239,7 +244,7 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
       });
       sourceRef.current = nextSource;
       setSource(nextSource);
-      setStatusText(`Starting video... (attempt ${playbackGenerationRef.current})`);
+      setStatusText(t('player.startingVideoAttempt', { attempt: playbackGenerationRef.current }));
       await loadVideoSource(activePlayer, nextSource, opts.seekMs / 1000);
       activePlayer.play();
       // Reported eagerly rather than from a 'play'/'playing' event: that event isn't
@@ -262,7 +267,7 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
         reportProgress();
       }
     },
-    [userId, itemId, reportProgress, loadVideoSource],
+    [userId, itemId, reportProgress, loadVideoSource, t],
   );
 
   // Creates (or replaces) the player for the given surface handle. Only ever called once the
@@ -304,7 +309,7 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
       // The generation number is shown so a re-fired onSurfaceViewCreated (KeplerVideoSurfaceView
       // isn't guaranteed to fire it only once) is visible directly on screen - logs are
       // unreliable here (systemd-journald rate-limits and silently drops bursts).
-      setStatusText(`Preparing playback... (attempt ${generation})`);
+      setStatusText(t('player.preparingPlaybackAttempt', { attempt: generation }));
       setReady(false);
       setShowControls(true);
       clearControlsHideTimer();
@@ -354,12 +359,12 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
       };
       const onWaiting = () => {
         if (!isCurrentPlayer()) return;
-        setStatusText('Buffering...');
+        setStatusText(t('player.buffering'));
         revealControls(false);
       };
       const onStalled = () => {
         if (!isCurrentPlayer()) return;
-        setStatusText('Playback stalled. Buffering...');
+        setStatusText(t('player.stalledBuffering'));
         revealControls(false);
       };
       const onCanPlay = () => {
@@ -403,6 +408,7 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
       clearControlsHideTimer,
       scheduleControlsHide,
       revealControls,
+      t,
     ],
   );
 
@@ -609,12 +615,12 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
 
       {error ? (
         <View style={styles.loading}>
-          <Text style={{ color: colors.onBackground }}>Playback failed.</Text>
+          <Text style={{ color: colors.onBackground }}>{t('player.playbackFailed')}</Text>
           {errorDetail ? (
             <Text style={[styles.errorDetail, { color: colors.onSurfaceVariant }]}>{errorDetail}</Text>
           ) : null}
           <Pressable onPress={onExit} style={styles.errorBack}>
-            <Text style={{ color: colors.primary }}>Back</Text>
+            <Text style={{ color: colors.primary }}>{t('common.back')}</Text>
           </Pressable>
         </View>
       ) : null}
@@ -687,15 +693,16 @@ interface TrackPickerProps {
 
 function TrackPicker({ audioTracks, subtitleTracks, selection, onSelectAudio, onSelectSubtitle, onClose }: TrackPickerProps) {
   const { colors } = useTheme();
+  const t = useT();
   return (
     <View style={[styles.picker, { backgroundColor: colors.surface, borderColor: colors.border }]}>
       {audioTracks.length > 0 ? (
         <>
-          <Text style={[styles.pickerHeading, { color: colors.onSurfaceVariant }]}>Audio</Text>
+          <Text style={[styles.pickerHeading, { color: colors.onSurfaceVariant }]}>{t('player.audio')}</Text>
           {audioTracks.map((track) => (
             <PickerRow
               key={track.Index}
-              label={track.DisplayTitle ?? track.Language ?? `Track ${track.Index}`}
+              label={track.DisplayTitle ?? track.Language ?? t('player.trackFallback', { number: track.Index ?? 0 })}
               selected={selection.audioStreamIndex === track.Index}
               onPress={() => track.Index != null && onSelectAudio(track.Index)}
             />
@@ -704,12 +711,12 @@ function TrackPicker({ audioTracks, subtitleTracks, selection, onSelectAudio, on
       ) : null}
       {subtitleTracks.length > 0 ? (
         <>
-          <Text style={[styles.pickerHeading, { color: colors.onSurfaceVariant }]}>Subtitles</Text>
-          <PickerRow label="Off" selected={selection.subtitleStreamIndex == null} onPress={() => onSelectSubtitle(undefined)} />
+          <Text style={[styles.pickerHeading, { color: colors.onSurfaceVariant }]}>{t('player.subtitles')}</Text>
+          <PickerRow label={t('common.off')} selected={selection.subtitleStreamIndex == null} onPress={() => onSelectSubtitle(undefined)} />
           {subtitleTracks.map((track) => (
             <PickerRow
               key={track.Index}
-              label={track.DisplayTitle ?? track.Language ?? `Track ${track.Index}`}
+              label={track.DisplayTitle ?? track.Language ?? t('player.trackFallback', { number: track.Index ?? 0 })}
               selected={selection.subtitleStreamIndex === track.Index}
               onPress={() => track.Index != null && onSelectSubtitle(track.Index)}
             />
@@ -717,7 +724,7 @@ function TrackPicker({ audioTracks, subtitleTracks, selection, onSelectAudio, on
         </>
       ) : null}
       <Pressable onPress={onClose} style={styles.pickerClose}>
-        <Text style={{ color: colors.primary }}>Close</Text>
+        <Text style={{ color: colors.primary }}>{t('common.close')}</Text>
       </Pressable>
     </View>
   );

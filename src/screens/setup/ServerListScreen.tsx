@@ -8,11 +8,13 @@ import { getServerUrlCandidates } from '../../services/jellyfin/serverUrl';
 import { serverRepository } from '../../services/storage/ServerRepository';
 import { useTheme } from '../../theme/ThemeContext';
 import { generateId } from '../../util/uuid';
+import { useT } from '../../i18n/useTranslation';
 import type { SetupStackParamList } from '../../navigation/types';
 
 // ui/setup/ServerList.kt equivalent - lists known servers and lets the user add a new one.
 export function ServerListScreen() {
   const { colors } = useTheme();
+  const t = useT();
   const navigation = useNavigation<NativeStackNavigationProp<SetupStackParamList, 'ServerList'>>();
   const [url, setUrl] = useState('');
   const [connecting, setConnecting] = useState(false);
@@ -29,7 +31,7 @@ export function ServerListScreen() {
       // serverUrl.ts). Probe candidates against the real server and persist whichever answers.
       const candidates = getServerUrlCandidates(url);
       if (!candidates.length) {
-        throw new Error('Enter a server address.');
+        throw new Error(t('setup.enterServerAddress'));
       }
 
       let resolvedUrl: string | null = null;
@@ -52,7 +54,7 @@ export function ServerListScreen() {
       }
 
       if (!resolvedUrl) {
-        throw firstError instanceof Error ? firstError : new Error('Unable to reach the server.');
+        throw firstError instanceof Error ? firstError : new Error(t('setup.unableToReachServer'));
       }
 
       const server = {
@@ -66,7 +68,7 @@ export function ServerListScreen() {
       navigation.navigate('UserList', { serverId: server.id });
       setUrl('');
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unable to reach the server.');
+      setError(e instanceof Error ? e.message : t('setup.unableToReachServer'));
     } finally {
       setConnecting(false);
     }
@@ -74,7 +76,7 @@ export function ServerListScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Text style={[styles.title, { color: colors.onBackground }]}>Add a Jellyfin server</Text>
+      <Text style={[styles.title, { color: colors.onBackground }]}>{t('setup.addServer')}</Text>
       <TextInput
         value={url}
         onChangeText={setUrl}
@@ -90,7 +92,7 @@ export function ServerListScreen() {
         onPress={addServer}
         style={[styles.button, { backgroundColor: colors.primary }]}
       >
-        {connecting ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={{ color: colors.onPrimary }}>Connect</Text>}
+        {connecting ? <ActivityIndicator color={colors.onPrimary} /> : <Text style={{ color: colors.onPrimary }}>{t('setup.connect')}</Text>}
       </Pressable>
 
       <FlatList

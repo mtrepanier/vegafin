@@ -3,5 +3,5 @@ import { StubScreen } from '../../components/StubScreen';
 
 // ui/detail/music/NowPlayingPage.kt equivalent (visualizer, lyrics, queue).
 export function NowPlayingScreen() {
-  return <StubScreen name="Now Playing" phase="Phase 3" />;
+  return <StubScreen name="stub.nowPlaying" phase="Phase 3" />;
 }

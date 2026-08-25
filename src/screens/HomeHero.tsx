@@ -7,6 +7,7 @@ import { layout } from '../theme/types';
 import { formatHeroInfoLine } from '../util/format';
 import { itemOrParentLogoImageUrl } from '../services/jellyfin/images';
 import { useAppSettings } from '../services/storage/AppSettingsContext';
+import { useLanguage } from '../i18n/useLanguage';
 import { Clock } from '../components/Clock';
 import { HeroInfoLine } from '../components/HeroInfoLine';
 import { HOME_HERO_CONTENT_HEIGHT } from './homeHeroLayout';
@@ -27,9 +28,10 @@ interface Props {
 export function HomeHero({ item }: Props) {
   const { colors } = useTheme();
   const { showClock } = useAppSettings();
+  const language = useLanguage();
   const logoUri = itemOrParentLogoImageUrl(item, 400);
   const episodeTitle = item.Type === BaseItemKind.Episode ? item.Name : undefined;
-  const infoSegments = formatHeroInfoLine(item);
+  const infoSegments = formatHeroInfoLine(item, language);
 
   return (
     <View style={styles.hero}>

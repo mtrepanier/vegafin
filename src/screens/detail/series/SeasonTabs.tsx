@@ -5,6 +5,7 @@ import { useTheme } from '../../../theme/ThemeContext';
 import { layout } from '../../../theme/types';
 import { usePinScrollToStart } from '../../../focus/usePinScrollToStart';
 import { formatSeasonLabel } from '../../../util/format';
+import { useLanguage } from '../../../i18n/useLanguage';
 
 interface Props {
   seasons: BaseItemDto[];
@@ -18,6 +19,7 @@ interface Props {
 /** Season picker tabs above the episode row (`SeriesOverview.kt`'s season tab strip). */
 export function SeasonTabs({ seasons, selectedIndex, onSelect, autoFocus = true }: Props) {
   const { colors } = useTheme();
+  const language = useLanguage();
   const listRef = useRef<FlatList<BaseItemDto>>(null);
   // Skipped when selectedIndex is nonzero (e.g. deep-linking straight into a later season) -
   // pinning to 0 there would fight that deliberate initial selection.
@@ -58,7 +60,7 @@ export function SeasonTabs({ seasons, selectedIndex, onSelect, autoFocus = true 
                   color: selected ? colors.onPrimaryContainer : colors.onSurfaceVariant,
                 },
               ];
-              return <Text style={tabStyle}>{formatSeasonLabel(item)}</Text>;
+              return <Text style={tabStyle}>{formatSeasonLabel(item, language)}</Text>;
             }}
           </Pressable>
         );

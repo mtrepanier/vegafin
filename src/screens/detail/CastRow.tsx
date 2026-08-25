@@ -5,6 +5,7 @@ import { layout } from '../../theme/types';
 import { personImageUrl } from '../../services/jellyfin/images';
 import { ItemRow } from '../../components/ItemRow';
 import { PosterCard } from '../../components/cards/PosterCard';
+import { useT } from '../../i18n/useTranslation';
 import type { AppNavigationProp, DrawerParamList } from '../../navigation/types';
 
 interface Props {
@@ -16,13 +17,14 @@ interface Props {
 }
 
 /** Cast/crew row shared by Movie/Episode/SeriesOverview detail pages (`PersonRow.kt`). */
-export function CastRow({ title = 'Cast & Crew', people, navigation, autoFocus = true }: Props) {
+export function CastRow({ title, people, navigation, autoFocus = true }: Props) {
+  const t = useT();
   if (people.length === 0) {
     return null;
   }
   return (
     <ItemRow
-      title={title}
+      title={title ?? t('common.castAndCrew')}
       items={people}
       autoFocus={autoFocus}
       keyExtractor={(person, index) => person.Id ?? String(index)}

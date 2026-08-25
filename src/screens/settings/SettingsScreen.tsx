@@ -4,29 +4,43 @@ import { useTheme } from '../../theme/ThemeContext';
 import { layout } from '../../theme/types';
 import { useAppSettings } from '../../services/storage/AppSettingsContext';
 import { appSettingsRepository } from '../../services/storage/AppSettingsRepository';
-import type { ShowNextUpTiming, ThemeMusicVolume } from '../../services/storage/types';
+import type { ShowNextUpTiming, ThemeMusicVolume, UiLanguage } from '../../services/storage/types';
+import { useT } from '../../i18n/useTranslation';
+import type { TFunction } from '../../i18n/useTranslation';
 import { SettingsSection } from './SettingsSection';
 import { SettingsToggle } from './SettingsToggle';
-import { SettingsStepper, numericStepperOptions, type StepperOption } from './SettingsStepper';
+import { SettingsStepper, secondsStepperOptions, type StepperOption } from './SettingsStepper';
 import { SettingsInertRow } from './SettingsInertRow';
 import pkg from '../../../package.json';
 
-const THEME_MUSIC_OPTIONS: StepperOption<ThemeMusicVolume>[] = [
-  { value: 'disabled', label: 'Disabled' },
-  { value: 'low', label: 'Low' },
-  { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' },
-  { value: 'full', label: 'Full' },
-];
+function themeMusicOptions(t: TFunction): StepperOption<ThemeMusicVolume>[] {
+  return [
+    { value: 'disabled', label: t('settings.themeMusic.disabled') },
+    { value: 'low', label: t('settings.themeMusic.low') },
+    { value: 'medium', label: t('settings.themeMusic.medium') },
+    { value: 'high', label: t('settings.themeMusic.high') },
+    { value: 'full', label: t('settings.themeMusic.full') },
+  ];
+}
 
-const SHOW_NEXT_UP_OPTIONS: StepperOption<ShowNextUpTiming>[] = [
-  { value: 'atEnd', label: 'At the End of Playback' },
-  { value: 'duringCredits', label: 'During End Credits' },
-  { value: 'never', label: 'Never' },
-];
+function showNextUpOptions(t: TFunction): StepperOption<ShowNextUpTiming>[] {
+  return [
+    { value: 'atEnd', label: t('settings.showNextUp.atEnd') },
+    { value: 'duringCredits', label: t('settings.showNextUp.duringCredits') },
+    { value: 'never', label: t('settings.showNextUp.never') },
+  ];
+}
 
-const HIDE_CONTROLS_OPTIONS = numericStepperOptions([1, 2, 3, 4, 5, 7, 10, 15, 20, 30], 's');
-const SKIP_SECONDS_OPTIONS = numericStepperOptions([5, 10, 15, 30, 45, 60, 90, 120], 's');
+function languageOptions(t: TFunction): StepperOption<UiLanguage>[] {
+  return [
+    { value: 'system', label: t('settings.language.system') },
+    { value: 'en', label: t('settings.language.en') },
+    { value: 'fr', label: t('settings.language.fr') },
+  ];
+}
+
+const HIDE_CONTROLS_SECONDS = [1, 2, 3, 4, 5, 7, 10, 15, 20, 30];
+const SKIP_SECONDS = [5, 10, 15, 30, 45, 60, 90, 120];
 
 /**
  * App preferences root (ui/preferences equivalent) - a flat, single-screen list of sections
@@ -36,75 +50,81 @@ const SKIP_SECONDS_OPTIONS = numericStepperOptions([5, 10, 15, 30, 45, 60, 90, 1
  * sub-screen picker this doesn't need yet).
  *
  * All of these persist via `AppSettingsRepository` (device-local, not synced to the Jellyfin
- * server or tied to whichever user is signed in). Only "Show Clock" (`HomeHero.tsx`) and the
- * three Playback-section numeric settings (`PlaybackScreens.tsx`) are wired into real behavior
- * so far - Play Theme Music, Show Next Up, and Auto Play Next Up persist correctly but don't
- * yet drive anything, since theme-song audio and an end-of-playback Next Up prompt are their
- * own separate features, not yet built. Interface language and update checking are left as
- * inert display rows rather than fake working controls, for the same reason.
+ * server or tied to whichever user is signed in). "Show Clock" (`HomeHero.tsx`), the three
+ * Playback-section numeric settings (`PlaybackScreens.tsx`), and Interface Language (`src/i18n/`)
+ * are wired into real behavior. Play Theme Music, Show Next Up, and Auto Play Next Up persist
+ * correctly but don't yet drive anything, since theme-song audio and an end-of-playback Next Up
+ * prompt are their own separate features, not yet built. Update checking is left as an inert
+ * display row rather than a fake working control, for the same reason.
  */
 export function SettingsScreen() {
   const { colors } = useTheme();
   const settings = useAppSettings();
+  const t = useT();
 
   return (
     <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.content}>
-      <Text style={[styles.title, { color: colors.onBackground }]}>Settings</Text>
+      <Text style={[styles.title, { color: colors.onBackground }]}>{t('settings.title')}</Text>
 
-      <SettingsSection title="Interface">
+      <SettingsSection title={t('settings.section.interface')}>
         <SettingsToggle
-          label="Show Clock"
+          label={t('settings.showClock')}
           value={settings.showClock}
           onChange={(v) => appSettingsRepository.update({ showClock: v })}
           hasTVPreferredFocus
         />
         <SettingsStepper
-          label="Play Theme Music"
+          label={t('settings.playThemeMusic')}
           value={settings.themeMusicVolume}
-          options={THEME_MUSIC_OPTIONS}
+          options={themeMusicOptions(t)}
           onChange={(v) => appSettingsRepository.update({ themeMusicVolume: v })}
         />
       </SettingsSection>
 
-      <SettingsSection title="Playback">
+      <SettingsSection title={t('settings.section.playback')}>
         <SettingsStepper
-          label="Hide Playback Controls After"
+          label={t('settings.hideControlsAfter')}
           value={settings.hideControlsAfterSec}
-          options={HIDE_CONTROLS_OPTIONS}
+          options={secondsStepperOptions(HIDE_CONTROLS_SECONDS, t)}
           onChange={(v) => appSettingsRepository.update({ hideControlsAfterSec: v })}
         />
         <SettingsStepper
-          label="Skip Forward"
+          label={t('settings.skipForward')}
           value={settings.skipForwardSec}
-          options={SKIP_SECONDS_OPTIONS}
+          options={secondsStepperOptions(SKIP_SECONDS, t)}
           onChange={(v) => appSettingsRepository.update({ skipForwardSec: v })}
         />
         <SettingsStepper
-          label="Skip Backward"
+          label={t('settings.skipBackward')}
           value={settings.skipBackwardSec}
-          options={SKIP_SECONDS_OPTIONS}
+          options={secondsStepperOptions(SKIP_SECONDS, t)}
           onChange={(v) => appSettingsRepository.update({ skipBackwardSec: v })}
         />
         <SettingsStepper
-          label="Show Next Up"
+          label={t('settings.showNextUp')}
           value={settings.showNextUp}
-          options={SHOW_NEXT_UP_OPTIONS}
+          options={showNextUpOptions(t)}
           onChange={(v) => appSettingsRepository.update({ showNextUp: v })}
         />
         <SettingsToggle
-          label="Auto Play Next Up"
+          label={t('settings.autoPlayNextUp')}
           value={settings.autoPlayNextUp}
           onChange={(v) => appSettingsRepository.update({ autoPlayNextUp: v })}
         />
       </SettingsSection>
 
-      <SettingsSection title="User Settings">
-        <SettingsInertRow label="Interface Language" value="English" note="Coming soon" />
+      <SettingsSection title={t('settings.section.userSettings')}>
+        <SettingsStepper
+          label={t('settings.interfaceLanguage')}
+          value={settings.uiLanguage}
+          options={languageOptions(t)}
+          onChange={(v) => appSettingsRepository.update({ uiLanguage: v })}
+        />
       </SettingsSection>
 
-      <SettingsSection title="About">
-        <SettingsInertRow label="Version" value={pkg.version} />
-        <SettingsInertRow label="Updates" value="Not available yet" />
+      <SettingsSection title={t('settings.section.about')}>
+        <SettingsInertRow label={t('settings.version')} value={pkg.version} />
+        <SettingsInertRow label={t('settings.updates')} value={t('settings.updates.notAvailable')} />
       </SettingsSection>
     </ScrollView>
   );

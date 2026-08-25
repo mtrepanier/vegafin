@@ -5,6 +5,7 @@ import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
 import type { MediaUrl } from '@jellyfin/sdk/lib/generated-client/models/media-url';
 import { useTheme } from '../../theme/ThemeContext';
 import { FocusGroup } from '../../focus/FocusGroup';
+import { useT } from '../../i18n/useTranslation';
 
 interface Props {
   trailers: MediaUrl[];
@@ -28,6 +29,7 @@ interface Props {
  */
 export function TrailerListOverlay({ trailers, onClose }: Props) {
   const { colors } = useTheme();
+  const t = useT();
 
   useTVEventHandler((event: HWEvent) => {
     const type = (event.eventType ?? '').replace(/_up$/, '');
@@ -39,7 +41,7 @@ export function TrailerListOverlay({ trailers, onClose }: Props) {
   return (
     <View style={styles.backdrop}>
       <View style={[styles.panel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-        <Text style={[styles.title, { color: colors.onSurface }]}>Trailers</Text>
+        <Text style={[styles.title, { color: colors.onSurface }]}>{t('common.trailers')}</Text>
         <FocusGroup trapFocusUp trapFocusDown trapFocusLeft trapFocusRight>
           <ScrollView style={styles.list} focusItemAlignment="start">
             {trailers.map((trailer, index) => (
@@ -55,7 +57,7 @@ export function TrailerListOverlay({ trailers, onClose }: Props) {
                     <View style={itemStyle}>
                       <Icon name="play-arrow" size={20} color={contentColor} />
                       <Text numberOfLines={1} style={[styles.itemText, { color: contentColor }]}>
-                        {trailer.Name ?? `Trailer ${index + 1}`}
+                        {trailer.Name ?? t('common.trailerFallback', { number: index + 1 })}
                       </Text>
                     </View>
                   );
