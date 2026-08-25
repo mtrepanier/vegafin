@@ -693,10 +693,82 @@ simple for Phase 0 — if the server/user list ever grows large enough for JSON-
 read/write to matter, swap in `@amazon-devices/react-native-mmkv` (already used elsewhere
 in the Vega ecosystem) rather than reaching for a full SQLite/Room equivalent.
 
-PIN-protected profiles (`JellyfinUser.pin`) are supported end-to-end: `restoreSession()`
-returns `null` if the resolved user has a PIN set, and the setup flow should route to
-`PinEntryScreen` in that case (this routing isn't wired up yet — `App.tsx` currently only
-distinguishes "no session" vs "session," not "session needs a PIN").
+PIN-protected profiles (`JellyfinUser.pin`) are supported end-to-end for the switch-user flow
+below: `UserListScreen.tsx`'s `selectUser` routes to `PinEntryScreen` when the tapped profile
+has one set. `restoreSession()` (app launch) separately returns `null` for the same reason,
+but that path still isn't wired to `PinEntryScreen` — `App.tsx` currently only distinguishes
+"no session" vs "session," not "session needs a PIN," so a PIN-protected user's session
+silently doesn't restore on relaunch rather than prompting for it.
+
+### Switching servers/users (`UserListScreen.tsx`)
+
+Tapping the side nav's avatar/username row (`MainDrawerNavigator.tsx`'s `DrawerContent` header,
+now a `Pressable`) calls `serverRepository.switchUser(currentUser.server.id)` - clears the
+active session without forgetting any known server/user. `App.tsx`'s own `currentUser ?
+<RootNavigator /> : <SetupNavigator />` check does the rest: once `current` is `null`, the
+*entire app* swaps to `SetupNavigator` automatically, no navigation call needed. Signing in
+again (as the same user, a different one, or a different server entirely) sets `current`
+again, which swaps back to `RootNavigator` just as automatically - the reason
+`SetupNavigator`'s existing `ServerList`/`UserList`/`PinEntry` screens could be reused as the
+switcher UI outright rather than needing a parallel set built for the post-auth case.
+
+- **`switchUser`, not the plainer pre-existing `switchServerOrUser`, is what the avatar button
+  actually calls - the difference matters.** `SetupNavigator` is a *fresh* mount every time
+  `App.tsx` swaps to it, so on its own it has no way to know this particular swap was "go back
+  to the server I was just on," and defaults to its first screen, `ServerListScreen`'s "add a
+  server" flow - confirmed on-device as a real bug, not just a theoretical one: switching users
+  landed on "connect to a server" despite already being connected to one, and re-entering that
+  same URL created a *second*, duplicate entry for it (see the next bullet for why). `switchUser`
+  additionally stashes the server id in a small unpersisted `pendingUserSwitchServerId` field
+  (deliberately not written to `AsyncStorage` - it only needs to survive the moment between the
+  button press and `SetupNavigator` mounting, in the same app run) before delegating to
+  `switchServerOrUser`'s own clear-session behavior; `SetupNavigator` consumes-and-clears it via
+  a lazy `useState` initializer at mount to decide its `initialRouteName`
+  (`UserList`+`initialParams` instead of `ServerList`) - consumed exactly once, so a later
+  genuine cold start, or an explicit "Switch servers" tap from `UserListScreen`, doesn't keep
+  jumping back to the same server.
+- **Fixed the duplicate-server bug that surfaced while testing the above:**
+  `ServerListScreen.tsx`'s "add a server" flow called `generateId()` unconditionally, so
+  re-entering a URL that was already known created a second `JellyfinServerUsers` entry for the
+  same server (`upsertServer` only dedupes by id, and a fresh id never matches an existing one).
+  It now looks up an existing entry by the resolved URL first and reuses that id when there's a
+  match, so `upsertServer` correctly updates the existing record in place instead.
+
+- **`UserListScreen.tsx` was rebuilt around a "Select User" avatar-tile row** (known local
+  profiles for the current server - `serverRepository.listServers()`, not the server's own
+  public-user directory) instead of its previous small tap-to-prefill chip list. Tapping a
+  known profile switches to it *instantly* if it has no PIN (`serverRepository.changeUser`
+  with its existing stored record, unchanged) - no password re-entry, since a stored access
+  token is already there - or routes to `PinEntryScreen` if it does. An "Add User" tile reveals
+  the same username/password + Quick Connect sign-in form this screen already had. **The form
+  now only ever appears after explicitly tapping "Add User"**, regardless of how many local
+  profiles exist - an earlier version auto-opened it by default whenever there was at most one
+  known profile, on the theory that "I'm signed in, I want to add someone else" was the common
+  case, but on-device this just meant a username/password form was in your face on a screen
+  whose whole point was picking an existing avatar; the tile row (with its own "Add User" tile)
+  is always what's in front of you now, matching the title too ("Add User" vs. "Select User",
+  both reflecting `addUserOpen` directly). The tile row - and with it, tapping your own avatar
+  to back out of adding someone without finishing the form - stays visible either way, so
+  there's still a way back to the app without needing to know an escape hatch exists. A "Switch
+  servers" button goes back to `ServerListScreen`.
+- **Known-profile avatars are fetched per-user, authenticated with that profile's own stored
+  access token - not via `getUserApi().getPublicUsers()`.** The public-user-directory endpoint
+  is opt-out on the server side, and on the test server it's disabled, so `getPublicUsers()`
+  silently returned nothing usable and every known profile showed a generic person icon instead
+  of their real photo. Each local profile already has its own access token stored from a prior
+  sign-in, so `UserListScreen` now calls `getUserApi(api).getCurrentUser()` once per profile,
+  each through its own independent `Api` instance (`jellyfinClient.createApiFor(serverUrl,
+  token)`, new on `JellyfinClient`) rather than the shared `jellyfinClient` singleton -
+  concurrent `Promise.all` calls through the singleton would otherwise race, since `update()`
+  mutates and returns the *same* `Api` instance, and one profile's fetch could steal or
+  overwrite another's token mid-flight (or the singleton's own unauthenticated state, still used
+  elsewhere on this screen for the "Add User" sign-in flow). `createApiFor` builds a genuinely
+  separate instance via the underlying `Jellyfin.createApi()` factory instead, safe to use
+  side-by-side with the singleton and with each other.
+- **Fixed a real bug found while wiring the PIN path into this more:** `PinEntryScreen.tsx`
+  cleared the profile's PIN (`{ ...user, pin: null }`) on every *correct* entry, silently
+  disabling PIN protection after its first successful use instead of keeping it set for next
+  time. Now calls `changeUser` with the stored user unchanged.
 
 ### Theming
 
@@ -847,10 +919,11 @@ runner.
   forward/backward and the controls auto-hide delay are wired to real playback behavior, Show
   Clock to the Home hero, Interface Language to a full English/French localization (see
   [Internationalization](#internationalization-englishfrench)), and Show Next Up/Auto Play Next
-  Up to an actual [end-of-playback card](#next-up-prompt-nextupcardtsx). Still open: the
-  behavior behind Play Theme Music (theme-song audio), update checking, plus search, subtitle
-  customization, trickplay, skip intro/outro, multi-server/user switching UI, PIN-lock routing,
-  a third+ language.
+  Up to an actual [end-of-playback card](#next-up-prompt-nextupcardtsx). The side nav's avatar
+  now opens a [multi-server/user switcher](#switching-serversusers-userlistscreentsx)
+  reusing the pre-auth setup screens. Still open: the behavior behind Play Theme Music
+  (theme-song audio), update checking, plus search, subtitle customization, trickplay, skip
+  intro/outro, PIN-lock routing on app-launch session restore specifically, a third+ language.
 - **Phase 3** — Live TV guide + DVR, music playback (now playing/visualizer/lyrics),
   Jellyseerr discover integration, screensaver/slideshow, photo albums.
 
@@ -897,7 +970,9 @@ src/
                                still-Phase-2-stub HomeSettings/SubtitleSettings/
                                UserAppPreferences screens; SettingsToggle/SettingsStepper/
                                SettingsSection/SettingsInertRow row components
-    setup/                     ServerList/UserList (password + Quick Connect)/PinEntry screens
+    setup/                     ServerList/UserList ("Select User" avatar tiles + password/Quick
+                               Connect sign-in)/PinEntry - reused post-auth too as the side
+                               nav's switch-user flow, see Switching servers/users above
   w3cmedia/                   Vendored Shaka Player + DOM/URL/fetch polyfills - see the playback
                                correction above. Excluded from lint (.eslintrc ignorePatterns).
   types/                      Ambient .d.ts augmentations (react-native-kepler/vector-icons gaps,

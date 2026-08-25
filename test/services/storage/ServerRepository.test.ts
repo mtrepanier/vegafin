@@ -58,6 +58,7 @@ beforeEach(() => {
   (serverRepository as unknown as { servers: unknown[] }).servers = [];
   (serverRepository as unknown as { current: unknown }).current = null;
   (serverRepository as unknown as { ready: boolean }).ready = false;
+  (serverRepository as unknown as { pendingUserSwitchServerId: string | null }).pendingUserSwitchServerId = null;
 });
 
 describe('addAndChangeServer', () => {
@@ -308,6 +309,30 @@ describe('switchServerOrUser', () => {
     expect(serverRepository.getSnapshot()).toBeNull();
     expect(serverRepository.listServers()[0].users).toEqual([user]);
     expect(AsyncStorage.removeItem).toHaveBeenCalledWith('vegafin.current.v1');
+  });
+});
+
+describe('switchUser / consumePendingUserSwitchServerId', () => {
+  it('clears the current session the same way switchServerOrUser does', async () => {
+    const server = makeServer();
+    const user = makeUser();
+    await serverRepository.changeUser(server, user);
+
+    await serverRepository.switchUser(server.id);
+
+    expect(serverRepository.getSnapshot()).toBeNull();
+    expect(serverRepository.listServers()[0].users).toEqual([user]);
+  });
+
+  it('remembers the given server id for one later consume, then forgets it', async () => {
+    await serverRepository.switchUser('server-1');
+
+    expect(serverRepository.consumePendingUserSwitchServerId()).toBe('server-1');
+    expect(serverRepository.consumePendingUserSwitchServerId()).toBeNull();
+  });
+
+  it('returns null when nothing is pending (a genuine cold start)', () => {
+    expect(serverRepository.consumePendingUserSwitchServerId()).toBeNull();
   });
 });
 

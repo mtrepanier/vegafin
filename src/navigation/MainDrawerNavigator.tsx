@@ -25,6 +25,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { FocusGroup } from '../focus/FocusGroup';
 import { useFocusGroupExpanded } from '../focus/useFocusGroupExpanded';
 import { useCurrentUser } from '../services/storage/ServerRepositoryContext';
+import { serverRepository } from '../services/storage/ServerRepository';
 import { jellyfinClient } from '../services/jellyfin/JellyfinClient';
 import { fetchUserLibraries } from '../services/jellyfin/homeRows';
 import { userImageUrl } from '../services/jellyfin/images';
@@ -143,33 +144,57 @@ function DrawerContent({ navigation, state }: DrawerContentComponentProps) {
 
   return (
     <View style={containerStyle}>
-      <View style={styles.header}>
-        <View style={avatarStyle}>
-          {avatarUri ? (
-            <Image source={{ uri: avatarUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
-          ) : (
-            <Icon name="person" size={20} color={colors.onSurfaceVariant} />
-          )}
-        </View>
-        {expanded ? (
-          <View style={styles.headerText}>
-            <Text numberOfLines={1} style={[styles.username, { color: colors.onSurface }]}>
-              {currentUser?.user.name ?? t('common.user')}
-            </Text>
-            <Text numberOfLines={1} style={[styles.serverName, { color: colors.onSurfaceVariant }]}>
-              {currentUser?.server.name ?? currentUser?.server.url}
-            </Text>
-          </View>
-        ) : null}
-      </View>
+      {/* trapFocusUp/Down: reaching the header (topmost) or the last row (bottommost) should
+          stop there, not escape into whatever's above/below the drawer on screen. Now wraps the
+          header too, not just the row list below it - the header became focusable (the
+          switch-user button) at the same time this comment was written, and trapFocusUp on a
+          group covering only the rows would make the header unreachable by D-pad from within
+          the rail entirely (nothing above the rail to escape *into* otherwise). Left/right stay
+          untrapped - the drawer must let focus escape right into the main content, and the main
+          content's own screens (Home's rows, library grids) let focus escape left back in, see
+          ItemGrid.tsx's trapFocusLeft removal. */}
+      <FocusGroup trapFocusUp trapFocusDown style={styles.contentGroup}>
+        {/* Taps into serverRepository.switchUser() - clears the active session without
+            forgetting any known server/user, which makes App.tsx's own currentUser check swap
+            this whole navigator out for SetupNavigator automatically (see its ServerList/
+            UserList screens - reused as the switcher UI, not a separate screen built for this).
+            No explicit navigation call needed here at all. switchUser (not the plainer
+            switchServerOrUser) also remembers the current server, so SetupNavigator opens
+            straight to that server's user picker instead of "add a server". */}
+        <Pressable
+          onFocus={reveal}
+          onBlur={release}
+          onPress={() => currentUser && serverRepository.switchUser(currentUser.server.id)}
+        >
+          {({ focused }: PressableStateCallbackType) => {
+            const headerStyle = [styles.header, { backgroundColor: focused ? colors.primaryContainer : 'transparent' }];
+            const textColor = focused ? colors.onPrimaryContainer : colors.onSurface;
+            const subTextColor = focused ? colors.onPrimaryContainer : colors.onSurfaceVariant;
+            return (
+              <View style={headerStyle}>
+                <View style={avatarStyle}>
+                  {avatarUri ? (
+                    <Image source={{ uri: avatarUri }} style={StyleSheet.absoluteFill} resizeMode="cover" />
+                  ) : (
+                    <Icon name="person" size={20} color={colors.onSurfaceVariant} />
+                  )}
+                </View>
+                {expanded ? (
+                  <View style={styles.headerText}>
+                    <Text numberOfLines={1} style={[styles.username, { color: textColor }]}>
+                      {currentUser?.user.name ?? t('common.user')}
+                    </Text>
+                    <Text numberOfLines={1} style={[styles.serverName, { color: subTextColor }]}>
+                      {currentUser?.server.name ?? currentUser?.server.url}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+            );
+          }}
+        </Pressable>
 
-      {/* trapFocusUp/Down: reaching the first/last row should stop there, not escape into
-          whatever's above/below the drawer on screen. Left/right are left untrapped - the
-          drawer must let focus escape right into the main content, and the main content's own
-          screens (Home's rows, library grids) let focus escape left back in, see ItemGrid.tsx's
-          trapFocusLeft removal. */}
-      <FocusGroup trapFocusUp trapFocusDown style={styles.rowsGroup}>
-        <ScrollView focusItemAlignment="start" contentContainerStyle={styles.rows} showsVerticalScrollIndicator={false}>
+        <ScrollView focusItemAlignment="start" style={styles.rowsScroll} contentContainerStyle={styles.rows} showsVerticalScrollIndicator={false}>
           {FIXED_ITEMS.map((item) => (
             <DrawerRow
               key={item.route}
@@ -223,12 +248,13 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   transparentScene: { backgroundColor: 'transparent' },
   container: { flex: 1, paddingTop: 24, paddingHorizontal: 12, gap: 4 },
-  header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 4, paddingVertical: 12, marginBottom: 12 },
+  header: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 4, paddingVertical: 12, marginBottom: 12, borderRadius: 8 },
   avatar: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
   headerText: { flex: 1, gap: 2 },
   username: { fontSize: 15, fontWeight: '700' },
   serverName: { fontSize: 12 },
-  rowsGroup: { flex: 1 },
+  contentGroup: { flex: 1 },
+  rowsScroll: { flex: 1 },
   rows: { gap: 4 },
   row: { flexDirection: 'row', alignItems: 'center', gap: 16, paddingVertical: 12, paddingHorizontal: 12, borderRadius: 8 },
   label: { fontSize: 15, flex: 1 },

@@ -35,18 +35,33 @@ class JellyfinClient {
       this._api = null;
       return null;
     }
-    // Defensive normalization for servers stored before ServerListScreen started resolving a
-    // real scheme at add time (see serverUrl.ts): a schemeless base URL still works for
-    // JS-side API calls but silently breaks the native media pipeline later, so default to
-    // https rather than let it through unnormalized. Doesn't re-probe http/https like the
-    // add-server flow does - that only matters for already-stored, already-broken data.
-    const resolvedUrl = /^https?:\/\//i.test(serverUrl.trim()) ? normalizeServerUrl(serverUrl) : `https://${normalizeServerUrl(serverUrl)}`;
+    const resolvedUrl = resolveServerUrl(serverUrl);
     if (!this._api || this._api.basePath !== resolvedUrl) {
       this._api = this.jellyfin.createApi(resolvedUrl);
     }
     this._api.accessToken = accessToken ?? '';
     return this._api;
   }
+
+  /** Builds a standalone `Api` instance rather than repointing the shared singleton - for
+   * callers needing more than one authenticated identity live at once (e.g. UserListScreen
+   * fetching each known local profile's own avatar with that profile's own access token, in
+   * parallel, without racing/clobbering the token this singleton is using for its own
+   * unauthenticated getPublicUsers() call on the same screen). */
+  createApiFor(serverUrl: string, accessToken: string | null): Api {
+    const api = this.jellyfin.createApi(resolveServerUrl(serverUrl));
+    api.accessToken = accessToken ?? '';
+    return api;
+  }
+}
+
+// Defensive normalization for servers stored before ServerListScreen started resolving a real
+// scheme at add time (see serverUrl.ts): a schemeless base URL still works for JS-side API
+// calls but silently breaks the native media pipeline later, so default to https rather than
+// let it through unnormalized. Doesn't re-probe http/https like the add-server flow does -
+// that only matters for already-stored, already-broken data.
+function resolveServerUrl(serverUrl: string): string {
+  return /^https?:\/\//i.test(serverUrl.trim()) ? normalizeServerUrl(serverUrl) : `https://${normalizeServerUrl(serverUrl)}`;
 }
 
 export const jellyfinClient = new JellyfinClient();

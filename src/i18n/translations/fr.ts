@@ -104,6 +104,9 @@ export const fr: Record<TranslationKey, string> = {
   // Setup / sign-in
   'setup.addServer': 'Ajouter un serveur Jellyfin',
   'setup.connect': 'Connexion',
+  'setup.selectUser': 'Sélectionner un utilisateur',
+  'setup.addUser': 'Ajouter un utilisateur',
+  'setup.switchServers': 'Changer de serveur',
   'setup.enterServerAddress': "Entrez l'adresse d'un serveur.",
   'setup.unableToReachServer': 'Impossible de joindre le serveur.',
   'setup.username': "Nom d'utilisateur",

@@ -73,3 +73,35 @@ describe('JellyfinClient.update', () => {
     expect(second).toBe(first);
   });
 });
+
+describe('JellyfinClient.createApiFor', () => {
+  let jellyfinClient: typeof JellyfinClientSingleton;
+
+  beforeEach(() => {
+    jest.resetModules();
+    jellyfinClient = require('../../../src/services/jellyfin/JellyfinClient').jellyfinClient;
+  });
+
+  it('builds a standalone Api instance with the given url and token, normalized the same way as update()', () => {
+    const api = jellyfinClient.createApiFor('example.com', 'user-token');
+    expect(api.basePath).toBe('https://example.com');
+    expect(api.accessToken).toBe('user-token');
+  });
+
+  it('defaults the access token to an empty string when null', () => {
+    const api = jellyfinClient.createApiFor('https://example.com', null);
+    expect(api.accessToken).toBe('');
+  });
+
+  it('does not share state with the shared singleton api or with other created instances', () => {
+    jellyfinClient.update('https://example.com', 'shared-token');
+    const a = jellyfinClient.createApiFor('https://example.com', 'token-a');
+    const b = jellyfinClient.createApiFor('https://example.com', 'token-b');
+
+    expect(a).not.toBe(jellyfinClient.api);
+    expect(a).not.toBe(b);
+    expect(a.accessToken).toBe('token-a');
+    expect(b.accessToken).toBe('token-b');
+    expect(jellyfinClient.api.accessToken).toBe('shared-token');
+  });
+});
