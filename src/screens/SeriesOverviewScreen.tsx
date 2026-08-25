@@ -16,6 +16,7 @@ import { SeasonTabs } from './detail/series/SeasonTabs';
 import { EpisodeRow } from './detail/series/EpisodeRow';
 import { FocusedEpisodeFooter } from './detail/series/FocusedEpisodeFooter';
 import { CastRow } from './detail/CastRow';
+import { TrailerListOverlay } from './detail/TrailerListOverlay';
 import type { AppNavigationProp, DrawerParamList } from '../navigation/types';
 
 /**
@@ -54,6 +55,7 @@ function SeriesOverviewBody({
   const [episodes, setEpisodes] = useState<BaseItemDto[] | null>(null);
   const [focusedEpisode, setFocusedEpisode] = useState<BaseItemDto | null>(null);
   const [similar, setSimilar] = useState<BaseItemDto[]>([]);
+  const [trailersOpen, setTrailersOpen] = useState(false);
 
   // Load the series and its seasons, then resolve the initial season from a deep link if given.
   useEffect(() => {
@@ -149,62 +151,74 @@ function SeriesOverviewBody({
   const cast = (series.People ?? []).filter((p) => p.Type === PersonKind.Actor).slice(0, 20);
   const guestStars = (focusedEpisode?.People ?? []).filter((p) => p.Type === PersonKind.GuestStar).slice(0, 20);
   const selectedSeasonId = seasons[selectedSeasonIndex]?.Id;
+  // Series-level, not the focused episode's - RemoteTrailers metadata for a show generally lives
+  // on the series item itself, matching how DetailHero's logo/genres also stay series-level while
+  // only the title/info line/synopsis track the focused episode.
+  const remoteTrailers = series.RemoteTrailers ?? [];
 
   return (
-    // No background color here, and no local backdrop image - same reasoning as
-    // MovieDetail.tsx: ScreenBackdrop.tsx (driven by the useScreenBackdrop() call above) already
-    // covers the whole screen behind this content.
-    <ScrollView ref={scrollRef} focusItemAlignment="start">
-      <View style={styles.content}>
-        <DetailHero item={series} detailItem={focusedEpisode ?? series} />
-        {/* Fixed height, not just numberOfLines - reserved regardless of whether the focused
-            episode's synopsis is 1 line, 2 lines, or missing entirely, so everything below
-            (season tabs, episode row, buttons) doesn't shift up/down as focus moves between
-            episodes with different synopsis lengths. */}
-        <View style={styles.overviewBox}>
-          {focusedEpisode?.Overview ? (
-            <Text numberOfLines={2} style={[styles.overview, { color: colors.onSurface }]}>
-              {focusedEpisode.Overview}
-            </Text>
-          ) : null}
+    <View style={styles.root}>
+      {/* No background color here, and no local backdrop image - same reasoning as
+          MovieDetail.tsx: ScreenBackdrop.tsx (driven by the useScreenBackdrop() call above)
+          already covers the whole screen behind this content. */}
+      <ScrollView ref={scrollRef} focusItemAlignment="start">
+        <View style={styles.content}>
+          <DetailHero item={series} detailItem={focusedEpisode ?? series} />
+          {/* Fixed height, not just numberOfLines - reserved regardless of whether the focused
+              episode's synopsis is 1 line, 2 lines, or missing entirely, so everything below
+              (season tabs, episode row, buttons) doesn't shift up/down as focus moves between
+              episodes with different synopsis lengths. */}
+          <View style={styles.overviewBox}>
+            {focusedEpisode?.Overview ? (
+              <Text numberOfLines={2} style={[styles.overview, { color: colors.onSurface }]}>
+                {focusedEpisode.Overview}
+              </Text>
+            ) : null}
+          </View>
         </View>
-      </View>
 
-      <SeasonTabs seasons={seasons} selectedIndex={selectedSeasonIndex} onSelect={setSelectedSeasonIndex} autoFocus={false} />
+        <SeasonTabs seasons={seasons} selectedIndex={selectedSeasonIndex} onSelect={setSelectedSeasonIndex} autoFocus={false} />
 
-      {episodes === null ? (
-        <View style={styles.episodesLoading}>
-          <ActivityIndicator color={colors.primary} />
-        </View>
-      ) : (
-        <EpisodeRow
-          key={selectedSeasonId}
-          episodes={episodes}
-          initialFocusEpisodeId={seasonEpisode?.episodeId}
-          onFocusEpisode={setFocusedEpisode}
-          onPressEpisode={handlePlay}
-        />
-      )}
-
-      {focusedEpisode ? (
-        <View style={styles.actions}>
-          <FocusedEpisodeFooter
-            episode={focusedEpisode}
-            onPlay={handlePlay}
-            onToggleFavorite={handleToggleFavorite}
-            onToggleWatched={handleToggleWatched}
+        {episodes === null ? (
+          <View style={styles.episodesLoading}>
+            <ActivityIndicator color={colors.primary} />
+          </View>
+        ) : (
+          <EpisodeRow
+            key={selectedSeasonId}
+            episodes={episodes}
+            initialFocusEpisodeId={seasonEpisode?.episodeId}
+            onFocusEpisode={setFocusedEpisode}
+            onPressEpisode={handlePlay}
           />
-        </View>
-      ) : null}
+        )}
 
-      <CastRow people={cast} navigation={navigation} autoFocus={false} />
-      <CastRow title="Guest Stars" people={guestStars} navigation={navigation} autoFocus={false} />
-      <PosterRow title="More Like This" items={similar} navigation={navigation} autoFocus={false} showTitles={false} />
-    </ScrollView>
+        {focusedEpisode ? (
+          <View style={styles.actions}>
+            <FocusedEpisodeFooter
+              episode={focusedEpisode}
+              onPlay={handlePlay}
+              onToggleFavorite={handleToggleFavorite}
+              onToggleWatched={handleToggleWatched}
+              onOpenTrailers={remoteTrailers.length > 0 ? () => setTrailersOpen(true) : undefined}
+            />
+          </View>
+        ) : null}
+
+        <CastRow people={cast} navigation={navigation} autoFocus={false} />
+        <CastRow title="Guest Stars" people={guestStars} navigation={navigation} autoFocus={false} />
+        <PosterRow title="More Like This" items={similar} navigation={navigation} autoFocus={false} showTitles={false} />
+      </ScrollView>
+
+      {trailersOpen ? <TrailerListOverlay trailers={remoteTrailers} onClose={() => setTrailersOpen(false)} /> : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   loading: {
     flex: 1,
     alignItems: 'center',

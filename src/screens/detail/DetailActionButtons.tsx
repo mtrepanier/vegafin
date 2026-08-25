@@ -60,6 +60,12 @@ interface Props {
   /** Omitted (rather than passed as a no-op) when the item has no local trailer - see
    * `item.LocalTrailerCount` at each call site. */
   onPlayTrailer?: () => void;
+  /** Opens the `RemoteTrailers` picker overlay (`TrailerListOverlay.tsx`) - a separate button
+   * from `onPlayTrailer` above, since a local trailer plays directly through this app's own
+   * player while `RemoteTrailers` are external links (YouTube, etc.) with no single obvious one
+   * to play, so they get a list to choose from instead. Omitted when the item has no
+   * `RemoteTrailers` - see `item.RemoteTrailers` at each call site. */
+  onOpenTrailers?: () => void;
   /** Extra buttons (e.g. Shuffle on Series/Collection) rendered between Play and the toggles. */
   extra?: React.ReactNode;
   /** See `ItemRow`'s `autoFocus` doc - false when some other element on the same page (e.g. an
@@ -90,6 +96,7 @@ export function DetailActionButtons({
   onToggleFavorite,
   onToggleWatched,
   onPlayTrailer,
+  onOpenTrailers,
   extra,
   autoFocus = true,
 }: Props) {
@@ -117,6 +124,7 @@ export function DetailActionButtons({
       />
       {extra}
       {onPlayTrailer ? <ActionButton icon="movie" label="Trailer" onPress={onPlayTrailer} /> : null}
+      {onOpenTrailers ? <ActionButton icon="theaters" label="Trailers" onPress={onOpenTrailers} /> : null}
       <ActionButton
         icon={item.UserData?.IsFavorite ? 'favorite' : 'favorite-border'}
         label="Favorite"
