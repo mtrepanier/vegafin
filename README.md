@@ -36,13 +36,14 @@ Phase 0's scaffold (navigation graph, auth/session, theming) is done, and Phase 
   is Phase 2 territory. See [Home screen](#home-screen-homescreentsx-homeherotsx) below.
 - **Library grid/list browsing** (`FilteredCollection`/`ItemGrid`/`MoreHomeRow`/`Favorites`),
   with sort and a grid/list view toggle.
-- **Detail pages** for Movie, Episode, Collection (box set), and Person, plus a full
-  binge-style `SeriesOverview` page (season tabs + focused-episode header/footer + episode row)
-  for series browsing generally — Phase 1 didn't build the classic non-binge `SeriesDetails`.
-  Movie detail matches the Home screen's hero-style look (full-bleed backdrop, logo, per-type
-  info line, icon-only-until-focused action buttons including Trailer) — see [Movie
-  detail](#movie-detail-moviedetailtsx-detailactionbuttonstsx) below; Episode/Collection/Person
-  detail still use the earlier plain layout.
+- **Detail pages** for Movie, Collection (box set), and Person, plus a full binge-style
+  `SeriesOverview` page (season tabs + episode row + focused-episode action buttons) that also
+  covers episodes — there's no standalone episode detail page; Phase 1 didn't build the
+  classic non-binge `SeriesDetails` either. Movie detail and Series overview both match the
+  Home screen's hero-style look (full-bleed backdrop, logo, per-type info line) via the shared
+  `DetailHero` — see [Movie detail](#movie-detail-moviedetailtsx-detailactionbuttonstsx) and
+  [Series overview](#series-overview-seriesoverviewscreentsx) below; Collection/Person detail
+  still use the earlier plain layout.
 - **Core playback**: `negotiatePlayback` always forces server-side HLS transcoding (see the
   correction below for why direct play was dropped), resume position, 5s progress reporting,
   full remote-control input (play/pause, fast-forward/rewind, back, all confirmed working on
@@ -283,6 +284,15 @@ screen. This repo keeps that same split:
   the same navigator from elsewhere in the app so they keep the drawer/backdrop chrome
   without cluttering the menu. `Discover` is registered but deliberately left out of the
   visible menu (see below) — it's a Phase 3 stub, not a dead route.
+- **No standalone episode detail page.** `navigateToItem.ts` sends Episode-typed items (Home's
+  Continue Watching/Next Up rows, a person's "Episodes" credits row) to `SeriesOverview` using
+  the episode's own `SeriesId`/`SeasonId`, via the same `seasonEpisode` deep-link param
+  `SeriesOverviewScreen.tsx` already resolved a season tab and initial focused episode from —
+  same destination as tapping the series itself, just pre-aimed at the right season/episode.
+  `MediaItemScreen.tsx` has no Episode case at all (unlike Series, which still self-redirects
+  there for anything landing on that route with just an itemId/type pair) since redirecting
+  would need a fetch just to learn the episode's series id, and every real caller already goes
+  through `navigateToItem.ts` instead, which has the full item in hand.
 - **`RootStackParamList`** (`fullScreen = true`) — `Settings`, `SubtitleSettings`,
   `Playback`, `PlaybackList`, `Slideshow`, `NowPlaying`, etc. Pushed as bare full-screen
   stack screens over `Main` (which hosts the drawer navigator).
@@ -414,9 +424,10 @@ rows scrolling independently below it.
 #### Movie detail (`MovieDetail.tsx`, `DetailActionButtons.tsx`)
 
 Rebuilt to match the Home screen's hero-style look rather than the earlier plain
-title-and-backdrop layout: full-bleed backdrop (see above), logo (or plain title text) plus the
-shared `HeroInfoLine`, genres, action buttons, tagline, overview, then Cast and "More Like This"
-below.
+title-and-backdrop layout: full-bleed backdrop (see above), then the shared `DetailHero`
+(`screens/detail/DetailHero.tsx` - logo or plain title text, the `HeroInfoLine`, genres; also
+used by Series overview below, so both screens' headers stay visually identical instead of each
+duplicating this JSX), action buttons, tagline, overview, then Cast and "More Like This" below.
 
 - **Action buttons are icon-only until focused, then expand to an inverted light pill with the
   label alongside the icon** - `DetailActionButtons.tsx`'s local `ActionButton`, the same
@@ -436,6 +447,75 @@ below.
   to show the button) instead gates a local trailer file, fetched on press
   (`detail.ts`'s `fetchLocalTrailers`) and played through the normal `Playback` route like any
   other item.
+
+#### Series overview (`SeriesOverviewScreen.tsx`)
+
+The binge-watch page: the series' own backdrop and logo (via `DetailHero`, shared with Movie
+detail) stay fixed, but the episode title, the info line, and the synopsis underneath all track
+whichever episode currently has focus in the row below - genres stay series-level. Then: genre
+→ synopsis → season tabs → episode row → action buttons for the focused episode → Cast & Crew →
+Guest Stars → "More Like This".
+
+- **`DetailHero` takes an optional second item to drive episode-specific content.** `item`
+  (always the series) drives the logo and genres; `detailItem` (defaults to `item` itself -
+  `MovieDetail.tsx` never passes one, so its own info line is unaffected) drives the episode
+  title line and the info line. `SeriesOverviewScreen.tsx` passes `focusedEpisode ?? series`, so
+  the info line shows "S1 E1 · <air date> · <runtime> · ratings" (the same episode-shaped output
+  `formatHeroInfoLine` already gave Home's hero for an episode) instead of the series' own
+  year/rating, and an episode's own synopsis renders right below the info line - both swapping
+  as focus moves along the episode row. `FocusedEpisodeHeader.tsx`, an earlier version's
+  separate backdrop-swapping component for this same job, is gone; the backdrop itself stays
+  the series' own throughout, only the text content reacts to focus now.
+- **Season tab labels are built from `IndexNumber`, not trusted from `season.Name`** -
+  `util/format.ts`'s `formatSeasonLabel` ("Season 1", "Season 2", ... "Specials" for season 0).
+  A season's `Name` comes straight from whatever the metadata provider set, so it isn't
+  reliably in English or reliably present at all; falls back to `Name` only when there's no
+  `IndexNumber` to build a label from.
+- **No title under episode thumbnails** - `episodeBadgeLabel` (the same "E5" corner badge
+  Home's Continue Watching/Next Up rows use) is enough to tell episodes apart at a glance, with
+  the focused episode's own title already shown in the hero above.
+- **Guest Stars, shown under Cast & Crew, come from the focused *episode*, not the series** -
+  a second `CastRow` reading `focusedEpisode.People` filtered to `PersonKind.GuestStar`.
+  Jellyfin's `People` field on a Series item is the show's regular cast/crew; guest stars are
+  credited per-episode, so this has to track whichever episode is currently selected in the row
+  above, not the series itself.
+- **`fetchEpisodes` needs several fields requested explicitly, or episode cards/panes silently
+  render as if that data doesn't exist.** `fields: [ItemFields.People, ItemFields.Overview]`
+  (guest-star credits, synopsis) and `enableUserData: true` (watched checkmark, favorite heart,
+  resume progress bar - same gotcha as `homeRows.ts`'s resume/next-up rows) are all omitted by
+  default and gated the same way elsewhere in this codebase.
+- **Action buttons sit right under the episode row, flush with its left edge, not with extra
+  gaps of their own.** `ItemRow` (which `EpisodeRow` is built on) already trails itself with
+  `marginBottom: layout.rowSpacing`, so the actions wrapper doesn't add its own `marginTop` on
+  top of that. It doesn't add `paddingHorizontal` either, for a less obvious reason:
+  `FocusedEpisodeFooter.tsx` already applies `layout.contentPadding` itself (it was originally
+  rendered directly, with no wrapper) - adding the *same* padding again on the wrapper around it
+  doubled the button row's left offset to 80px instead of 40, visibly out of alignment with the
+  season tabs/episode row above it despite both apparently using "the same" padding constant.
+- **D-pad-down from the episode row lands on Play, not whichever button the platform judges
+  spatially nearest, via `destinations` rather than `hasTVPreferredFocus`.** With nothing in the
+  row claiming `hasTVPreferredFocus`, D-pad-down landed on Watched (the rightmost button)
+  instead. Making Play claim `hasTVPreferredFocus` fixed that but reintroduced the Focus
+  system's Gotcha #2 - its claim fired at mount and won the page's *initial* focus race against
+  the episode row, even when delayed ~400ms past mount (a `hasTVPreferredFocus` claim turning
+  true on an already-mounted, unfocused element turns out to yank focus to it immediately on
+  this platform, not just set up where a *later* entry should land - so no delay dodges this
+  race safely). `DetailActionButtons` now instead wraps its row in a `FocusGroup` with a
+  `destinations` prop (Kepler's `TVFocusGuideView` destinations,
+  `src/types/react-native-augmentations.d.ts`) pointed at Play's node handle - a passive "if
+  this group is ever entered, land here" rule rather than a proactive claim, so it can stay
+  active unconditionally with no race: `FocusedEpisodeFooter.tsx` passes `autoFocus={false}`
+  (Play never claims the page's initial focus) while D-pad-down still resolves to Play through
+  `destinations`.
+- **"More Like This" reuses `fetchSimilarItems`** (already generic across item types) and
+  `PosterRow`'s `showTitles={false}`, the same textless card look as Movie detail's row.
+- **The episode synopsis reserves a fixed height, not just a `numberOfLines` cap.** Without it,
+  everything below (season tabs, episode row, buttons) shifted up or down as focus moved
+  between episodes with different synopsis lengths - a 1-line synopsis produced a shorter block
+  than a 2-line one, and an episode with no synopsis at all collapsed the block to nothing.
+  `numberOfLines={2}` only bounds the *maximum*; the wrapping `overviewBox` view's fixed
+  `height: 44` (2 lines' worth of `styles.overview`'s own `lineHeight`) is what actually keeps
+  the space constant regardless of how much (or how little) text is actually there.
 
 ### Auth/session
 
@@ -547,11 +627,12 @@ scoped to the **service/business-logic layer**, not screens or components:
 - Auth/session (`ServerRepository`), server URL scheme resolution/probing (`serverUrl`,
   `JellyfinClient`), the Jellyfin API layer (`playback` negotiation + progress reporting,
   `homeRows` including the Continue Watching/Next Up split, `library`, `detail` including
-  `fetchLocalTrailers`, `images` including the hero's series-aware poster/logo fallbacks and the
-  side nav's avatar lookup, `episodeBadge`'s "E5" corner-badge labeling, `libraryIconName`'s
-  CollectionType→icon mapping, the `ItemPager` pagination hook), the pure formatting helpers in
-  `util/format.ts` (including the shared `formatHeroInfoLine`), `util/useCurrentTime.ts` (the
-  hero clock's interval hook), theming (`ThemeContext`), and the focus system's
+  `fetchLocalTrailers` and `fetchEpisodes`'s `People` field request, `images` including the
+  hero's series-aware poster/logo fallbacks and the side nav's avatar lookup, `episodeBadge`'s
+  "E5" corner-badge labeling, `libraryIconName`'s CollectionType→icon mapping, the `ItemPager`
+  pagination hook), the pure formatting helpers in `util/format.ts` (including the shared
+  `formatHeroInfoLine` and `formatSeasonLabel`), `util/useCurrentTime.ts` (the hero clock's
+  interval hook), theming (`ThemeContext`), and the focus system's
   `useLastFocusedIndex`, `usePinScrollToStart`, and `useFocusGroupExpanded` hooks (the last one
   backs the side nav's collapse/expand-on-focus behavior - pulled out of
   `MainDrawerNavigator.tsx` specifically so it has an independent test rather than only being
@@ -579,8 +660,9 @@ runner.
 - **Phase 1** (done, verified on the Vega Virtual Device) — Home page ("My Media": a
   focus-driven hero banner plus separate Continue Watching/Next Up/Recently-Added rows), a
   collapsible icon side nav (avatar/library shortcuts, replacing the earlier Home-screen
-  library row), library grid/list browsing, Movie/Episode/Collection/Person detail pages plus
-  a binge-style Series overview, core playback (`KeplerVideoSurfaceView` + a vendored Shaka Player over
+  library row), library grid/list browsing, Movie/Collection/Person detail pages plus a
+  binge-style Series overview (which also covers episodes - no standalone episode detail page),
+  core playback (`KeplerVideoSurfaceView` + a vendored Shaka Player over
   always-transcoded HLS, full remote-control input, auto-hiding custom controls — see the
   correction above), Quick Connect + password sign-in, a focus-managed card/row system built
   on native `TVFocusGuideView`/`hasTVPreferredFocus` (see [Focus system](#focus-system)), and a
@@ -616,10 +698,14 @@ src/
                                screen above), IconButton.tsx
   screens/
     HomeScreen.tsx, HomeHero.tsx, ScreenBackdrop.tsx (full-bleed backdrop layer, shared with
-    MovieDetail), homeHeroLayout.ts (shared hero/backdrop sizing), FavoritesScreen.tsx,
-    SeriesOverviewScreen.tsx, MediaItemScreen.tsx
+    MovieDetail/SeriesOverview), homeHeroLayout.ts (shared hero/backdrop sizing),
+    FavoritesScreen.tsx, SeriesOverviewScreen.tsx, MediaItemScreen.tsx
     library/                  FilteredCollection/ItemGrid/MoreHomeRow screens
-    detail/                   Movie/Episode/Collection/Person detail, series/ (SeriesOverview parts)
+    detail/                   DetailHero.tsx (shared Movie/SeriesOverview header), Movie/
+                               Collection/Person detail (no standalone Episode detail - episodes
+                               open on SeriesOverview instead, see Navigation above), series/
+                               (SeasonTabs/EpisodeRow/FocusedEpisodeFooter - the rest of
+                               SeriesOverview's parts)
     playback/                 PlaybackScreen, PlaybackListScreen (KeplerVideoSurfaceView + ShakaPlayer)
     setup/                     ServerList/UserList (password + Quick Connect)/PinEntry screens
   w3cmedia/                   Vendored Shaka Player + DOM/URL/fetch polyfills - see the playback

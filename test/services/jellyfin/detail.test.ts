@@ -122,13 +122,25 @@ describe('fetchEpisodes', () => {
   it('passes an undefined seasonId through when none is given', async () => {
     mockGetEpisodes.mockResolvedValue({ data: { Items: [] } });
     await fetchEpisodes('user-1', 'series-1');
-    expect(mockGetEpisodes).toHaveBeenCalledWith({ seriesId: 'series-1', userId: 'user-1', seasonId: undefined });
+    expect(mockGetEpisodes).toHaveBeenCalledWith({
+      seriesId: 'series-1',
+      userId: 'user-1',
+      seasonId: undefined,
+      fields: ['People', 'Overview'],
+      enableUserData: true,
+    });
   });
 
   it('passes a given seasonId through', async () => {
     mockGetEpisodes.mockResolvedValue({ data: { Items: [{ Id: 'ep-1' }] } });
     const result = await fetchEpisodes('user-1', 'series-1', 'season-1');
-    expect(mockGetEpisodes).toHaveBeenCalledWith({ seriesId: 'series-1', userId: 'user-1', seasonId: 'season-1' });
+    expect(mockGetEpisodes).toHaveBeenCalledWith({
+      seriesId: 'series-1',
+      userId: 'user-1',
+      seasonId: 'season-1',
+      fields: ['People', 'Overview'],
+      enableUserData: true,
+    });
     expect(result).toEqual([{ Id: 'ep-1' }]);
   });
 });

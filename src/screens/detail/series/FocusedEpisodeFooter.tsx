@@ -11,7 +11,13 @@ interface Props {
   onToggleWatched: (episode: BaseItemDto) => void;
 }
 
-/** Play/Resume + favorite/watched for whichever episode is focused (`FocusedEpisodeFooter.kt`). */
+/** Play/Resume + favorite/watched for whichever episode is focused (`FocusedEpisodeFooter.kt`).
+ *
+ * `autoFocus={false}` here: the episode row above, not Play, owns this page's initial focus.
+ * D-pad-down from that row still lands on Play specifically (not Watched, the rightmost button)
+ * thanks to `DetailActionButtons`' own `destinations`-based `FocusGroup` - see its doc comment
+ * for why that's a passive redirect rather than a proactive `hasTVPreferredFocus` claim, and why
+ * a proactive claim (even delayed past mount) isn't safe to use for this instead. */
 export function FocusedEpisodeFooter({ episode, onPlay, onToggleFavorite, onToggleWatched }: Props) {
   return (
     <View style={styles.container}>

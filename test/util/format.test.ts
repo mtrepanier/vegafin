@@ -1,5 +1,5 @@
 import { BaseItemKind } from '@jellyfin/sdk/lib/generated-client/models/base-item-kind';
-import { formatClockTime, formatFullDate, remainingRuntimeMs, formatHeroInfoLine } from '../../src/util/format';
+import { formatClockTime, formatFullDate, remainingRuntimeMs, formatHeroInfoLine, formatSeasonLabel } from '../../src/util/format';
 
 describe('formatClockTime', () => {
   it('formats as h:mm AM/PM', () => {
@@ -113,5 +113,24 @@ describe('formatHeroInfoLine', () => {
   it('omits the remaining-time section for an item with no saved position', () => {
     const item = { Type: BaseItemKind.Movie, ProductionYear: 2026, UserData: {} };
     expect(formatHeroInfoLine(item)).toEqual([{ kind: 'text', value: '2026' }]);
+  });
+});
+
+describe('formatSeasonLabel', () => {
+  it('builds "Season N" from IndexNumber', () => {
+    expect(formatSeasonLabel({ IndexNumber: 1 })).toBe('Season 1');
+    expect(formatSeasonLabel({ IndexNumber: 12 })).toBe('Season 12');
+  });
+
+  it('labels season 0 "Specials"', () => {
+    expect(formatSeasonLabel({ IndexNumber: 0 })).toBe('Specials');
+  });
+
+  it('falls back to Name when there is no IndexNumber', () => {
+    expect(formatSeasonLabel({ Name: 'Bonus Content' })).toBe('Bonus Content');
+  });
+
+  it('falls back to a plain "Season" when neither is present', () => {
+    expect(formatSeasonLabel({})).toBe('Season');
   });
 });

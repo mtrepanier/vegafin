@@ -2,7 +2,6 @@ import React, { useEffect } from 'react';
 import { useNavigation, useRoute, type RouteProp } from '@amazon-devices/react-navigation__native';
 import { BaseItemKind } from '@jellyfin/sdk/lib/generated-client/models/base-item-kind';
 import { MovieDetail } from './detail/MovieDetail';
-import { EpisodeDetail } from './detail/EpisodeDetail';
 import { CollectionDetail } from './detail/CollectionDetail';
 import { PersonDetail } from './detail/PersonDetail';
 import { StubScreen } from '../components/StubScreen';
@@ -14,6 +13,14 @@ import type { AppNavigationProp, DrawerParamList } from '../navigation/types';
  * here: Phase 1 targets the binge-style `SeriesOverview` page instead of Kotlin's classic
  * `SeriesDetails` (see the plan's Series detail scope decision), so a Series-typed MediaItem
  * redirects there rather than being dispatched inline.
+ *
+ * There's no Episode case at all, and no equivalent redirect effect for it either: unlike
+ * Series (whose itemId already *is* the id this route would redirect to), an episode's itemId
+ * is the episode's own id, not its series' - redirecting would need the series id, which isn't
+ * in this route's params and would need a fetch to find. `navigateToItem.ts` (the only place
+ * that builds `MediaItem` params) already has the full episode `BaseItemDto` in hand and sends
+ * Episode presses straight to `SeriesOverview` with the right series id, without ever routing
+ * through here - so this route is never actually asked to show an Episode.
  */
 export function MediaItemScreen() {
   const route = useRoute<RouteProp<DrawerParamList, 'MediaItem'>>();
@@ -39,8 +46,6 @@ export function MediaItemScreen() {
     case BaseItemKind.Video:
     case BaseItemKind.MusicVideo:
       return <MovieDetail key={itemId} itemId={itemId} navigation={navigation} />;
-    case BaseItemKind.Episode:
-      return <EpisodeDetail key={itemId} itemId={itemId} navigation={navigation} />;
     case BaseItemKind.BoxSet:
       return <CollectionDetail key={itemId} itemId={itemId} navigation={navigation} />;
     case BaseItemKind.Person:

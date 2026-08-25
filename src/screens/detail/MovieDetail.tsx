@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from '@amazon-devices/react-navigation__native';
 import { PersonKind } from '@jellyfin/sdk/lib/generated-client/models/person-kind';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
@@ -9,11 +9,10 @@ import { usePinScrollToStart } from '../../focus/usePinScrollToStart';
 import { useCurrentUser } from '../../services/storage/ServerRepositoryContext';
 import { useScreenBackdrop } from '../../navigation/screenBackdropContext';
 import { fetchItem, fetchLocalTrailers, fetchSimilarItems, setFavorite, setWatched } from '../../services/jellyfin/detail';
-import { itemOrParentLogoImageUrl } from '../../services/jellyfin/images';
-import { formatHeroInfoLine, ticksToMs } from '../../util/format';
-import { HeroInfoLine } from '../../components/HeroInfoLine';
+import { ticksToMs } from '../../util/format';
 import { PosterRow } from '../../components/PosterRow';
 import { DetailActionButtons } from './DetailActionButtons';
+import { DetailHero } from './DetailHero';
 import { CastRow } from './CastRow';
 import type { AppNavigationProp, DrawerParamList } from '../../navigation/types';
 
@@ -70,8 +69,6 @@ export function MovieDetail({ itemId, navigation }: Props) {
   }
 
   const cast = (item.People ?? []).filter((p) => p.Type === PersonKind.Actor).slice(0, 20);
-  const logoUri = itemOrParentLogoImageUrl(item, 400);
-  const infoSegments = formatHeroInfoLine(item);
   const hasTrailer = (item.LocalTrailerCount ?? 0) > 0;
 
   const handlePlay = () => {
@@ -108,15 +105,7 @@ export function MovieDetail({ itemId, navigation }: Props) {
     // section for why a screen's own background would just cover the backdrop back up.
     <ScrollView ref={scrollRef} focusItemAlignment="start">
       <View style={styles.content}>
-        {logoUri ? (
-          <Image source={{ uri: logoUri }} style={styles.logo} resizeMode="contain" />
-        ) : (
-          <Text style={[styles.title, { color: colors.onBackground }]}>{item.Name}</Text>
-        )}
-        <HeroInfoLine segments={infoSegments} color={colors.onSurfaceVariant} fontSize={16} numberOfLines={2} />
-        {item.Genres?.length ? (
-          <Text style={[styles.genres, { color: colors.onSurfaceVariant }]}>{item.Genres.join(', ')}</Text>
-        ) : null}
+        <DetailHero item={item} />
 
         <View style={styles.actions}>
           <DetailActionButtons
@@ -153,18 +142,6 @@ const styles = StyleSheet.create({
     maxWidth: 900,
     gap: 8,
   },
-  logo: {
-    width: 160,
-    height: 64,
-    alignSelf: 'flex-start',
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '700',
-  },
-  genres: {
-    fontSize: 14,
-  },
   actions: {
     marginTop: 8,
     marginBottom: 8,
@@ -172,11 +149,11 @@ const styles = StyleSheet.create({
   tagline: {
     fontStyle: 'italic',
     fontSize: 14,
-    maxWidth: 450,
+    maxWidth: 540,
   },
   overview: {
     fontSize: 15,
     lineHeight: 22,
-    maxWidth: 450,
+    maxWidth: 540,
   },
 });

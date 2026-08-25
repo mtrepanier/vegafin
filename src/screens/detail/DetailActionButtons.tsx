@@ -1,8 +1,9 @@
-import React from 'react';
-import { Pressable, StyleSheet, Text, View, type PressableStateCallbackType } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { findNodeHandle, Pressable, StyleSheet, Text, View, type PressableStateCallbackType } from 'react-native';
 import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import { useTheme } from '../../theme/ThemeContext';
+import { FocusGroup } from '../../focus/FocusGroup';
 
 interface ActionButtonProps {
   icon: string;
@@ -18,11 +19,17 @@ interface ActionButtonProps {
  * (including Play) gets identical treatment rather than Play having its own filled-at-rest
  * style - matching the reference screenshot, where the focused button is the only one that
  * looks different from the rest. `colors.onBackground`/`colors.background` (rather than a
- * literal white/black) keep the inverted pill theme-aware across this app's 8 palettes. */
-function ActionButton({ icon, label, active, onPress, hasTVPreferredFocus }: ActionButtonProps) {
+ * literal white/black) keep the inverted pill theme-aware across this app's 8 palettes.
+ *
+ * Forwards its ref onto the underlying `Pressable` (a plain host View, not a class instance) so
+ * `DetailActionButtons` can hand Play's node handle to a `FocusGroup`'s `destinations` prop. */
+const ActionButton = React.forwardRef<View, ActionButtonProps>(function ActionButton(
+  { icon, label, active, onPress, hasTVPreferredFocus },
+  ref,
+) {
   const { colors } = useTheme();
   return (
-    <Pressable hasTVPreferredFocus={hasTVPreferredFocus} onPress={onPress}>
+    <Pressable ref={ref} hasTVPreferredFocus={hasTVPreferredFocus} onPress={onPress}>
       {({ focused }: PressableStateCallbackType) => {
         const contentColor = focused ? colors.background : active ? colors.primary : colors.onSurfaceVariant;
         const buttonStyle = [
@@ -43,7 +50,7 @@ function ActionButton({ icon, label, active, onPress, hasTVPreferredFocus }: Act
       }}
     </Pressable>
   );
-}
+});
 
 interface Props {
   item: BaseItemDto;
@@ -56,12 +63,27 @@ interface Props {
   /** Extra buttons (e.g. Shuffle on Series/Collection) rendered between Play and the toggles. */
   extra?: React.ReactNode;
   /** See `ItemRow`'s `autoFocus` doc - false when some other element on the same page (e.g. an
-   * episode row) is the intended initial focus target instead of this Play button. */
+   * episode row) is the intended initial focus target instead of this Play button. Only controls
+   * whether Play *proactively claims* the page's initial focus (`hasTVPreferredFocus`) - it does
+   * not affect where D-pad navigation *into* this row from elsewhere lands, which is always Play
+   * regardless (see the `destinations` comment below). */
   autoFocus?: boolean;
 }
 
 /** Play/Resume + trailer/favorite/watched toggles, shared across every detail page
- * (`ExpandablePlayButtons`). */
+ * (`ExpandablePlayButtons`).
+ *
+ * The row is wrapped in a `FocusGroup` with `destinations` pointed at Play, so any D-pad entry
+ * into this row - from the episode row above on `SeriesOverviewScreen.tsx`, or from anywhere else
+ * - lands on Play specifically, not whichever button the platform judges spatially nearest
+ * (rightmost/Watched, with nothing else in the row claiming it). This is independent from
+ * `autoFocus`/`hasTVPreferredFocus` above deliberately: an earlier attempt made Play claim
+ * `hasTVPreferredFocus` instead (even delayed via a timer past mount) and it reliably *stole* the
+ * page's initial focus away from the episode row that's supposed to have it - `hasTVPreferredFocus`
+ * turning true apparently does yank focus on this platform, contradicting the assumption the delay
+ * was based on. `destinations` doesn't have that failure mode: it's a passive "if this group is
+ * ever entered, land here" rule, not a proactive claim, so it can point at Play unconditionally
+ * without any risk of grabbing focus away from wherever it already is. */
 export function DetailActionButtons({
   item,
   onPlay,
@@ -73,9 +95,21 @@ export function DetailActionButtons({
 }: Props) {
   const resumeTicks = item.UserData?.PlaybackPositionTicks ?? 0;
 
+  const playRef = useRef<View>(null);
+  // Node handle, not the raw ref - `destinations`' type accepts a `number` handle or a class
+  // component instance, and Pressable's forwarded ref resolves to a plain host View instance,
+  // not a class instance, so `findNodeHandle` is what actually satisfies it. Populated a render
+  // after mount, once the ref has attached - `destinations` is a normal reactive prop, so the
+  // group picks it up as soon as this state update lands.
+  const [playHandle, setPlayHandle] = useState<number | null>(null);
+  useEffect(() => {
+    setPlayHandle(findNodeHandle(playRef.current));
+  }, []);
+
   return (
-    <View style={styles.row}>
+    <FocusGroup style={styles.row} destinations={playHandle != null ? [playHandle] : undefined}>
       <ActionButton
+        ref={playRef}
         icon="play-arrow"
         label={resumeTicks > 0 ? 'Resume' : 'Play'}
         hasTVPreferredFocus={autoFocus}
@@ -95,7 +129,7 @@ export function DetailActionButtons({
         active={item.UserData?.Played}
         onPress={onToggleWatched}
       />
-    </View>
+    </FocusGroup>
   );
 }
 

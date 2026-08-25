@@ -2,6 +2,7 @@ import React from 'react';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import { layout } from '../../../theme/types';
 import { primaryImageUrl } from '../../../services/jellyfin/images';
+import { episodeBadgeLabel } from '../../../services/jellyfin/episodeBadge';
 import { ItemRow } from '../../../components/ItemRow';
 import { PosterCard } from '../../../components/cards/PosterCard';
 
@@ -12,12 +13,10 @@ interface Props {
   initialFocusEpisodeId?: string;
 }
 
-function episodeLabel(episode: BaseItemDto): string {
-  return episode.IndexNumber != null ? `${episode.IndexNumber}. ${episode.Name ?? ''}` : (episode.Name ?? '');
-}
-
 /** Horizontal episode row for the selected season - the focused card drives
- * `FocusedEpisodeHeader`/`FocusedEpisodeFooter` above it. */
+ * `FocusedEpisodeFooter` below it (`SeriesOverviewScreen.tsx`). No title under the thumbnail
+ * (an "E5"-style corner badge instead, same as Home's Continue Watching/Next Up rows) - the
+ * series name is already shown in this page's own hero, above the season tabs. */
 export function EpisodeRow({ episodes, onFocusEpisode, onPressEpisode, initialFocusEpisodeId }: Props) {
   const initialIndex = Math.max(
     0,
@@ -33,7 +32,7 @@ export function EpisodeRow({ episodes, onFocusEpisode, onPressEpisode, initialFo
         <PosterCard
           uri={primaryImageUrl(episode, layout.landscape.width)}
           metrics={layout.landscape}
-          title={episodeLabel(episode)}
+          episodeBadge={episodeBadgeLabel(episode)}
           watched={episode.UserData?.Played ?? false}
           favorite={episode.UserData?.IsFavorite ?? false}
           progressPercent={episode.UserData?.PlayedPercentage ?? undefined}

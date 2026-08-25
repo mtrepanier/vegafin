@@ -14,6 +14,13 @@ interface FocusGroupProps extends ViewProps {
   trapFocusDown?: boolean;
   trapFocusLeft?: boolean;
   trapFocusRight?: boolean;
+  /** Redirect *any* entry into this group (D-pad navigation from outside it, or the initial
+   * focus resolution if nothing else on screen has already claimed it) to a specific descendant,
+   * regardless of spatial position - takes precedence over `autoFocus` and, unlike
+   * `hasTVPreferredFocus`, is a passive rule ("if entered, land here") rather than a proactive
+   * claim, so setting it doesn't yank focus away from wherever it currently is. See
+   * `DetailActionButtons.tsx` for why that distinction matters here. */
+  destinations?: (null | number | React.Component<any, any> | React.ComponentClass<any>)[];
 }
 
 /**
@@ -30,6 +37,7 @@ export function FocusGroup({
   trapFocusDown,
   trapFocusLeft,
   trapFocusRight,
+  destinations,
   ...viewProps
 }: FocusGroupProps) {
   return (
@@ -39,6 +47,7 @@ export function FocusGroup({
       trapFocusDown={trapFocusDown}
       trapFocusLeft={trapFocusLeft}
       trapFocusRight={trapFocusRight}
+      destinations={destinations}
       {...viewProps}
     >
       {children}

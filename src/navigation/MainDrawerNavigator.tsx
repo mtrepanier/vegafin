@@ -258,17 +258,17 @@ export function MainDrawerNavigator() {
             }}
             drawerContent={DrawerContent}
           >
-            {/* sceneStyle transparent on Home and MediaItem only: every Drawer.Screen is
-                wrapped by the navigator's own Screen/Background, which unconditionally paints
-                an opaque colors.background over the whole content pane and would otherwise
-                hide ScreenBackdrop completely, not just behind the nav rail. MediaItem covers
-                Movie/Episode/Collection/Person detail (see MediaItemScreen.tsx) - only
-                MovieDetail.tsx currently sets a backdrop, so the others just fall through to
-                this View's own colors.background below, same as before. Every other screen
-                keeps the navigator's default opaque background. */}
+            {/* sceneStyle transparent on Home, SeriesOverview, and MediaItem only: every
+                Drawer.Screen is wrapped by the navigator's own Screen/Background, which
+                unconditionally paints an opaque colors.background over the whole content pane
+                and would otherwise hide ScreenBackdrop completely, not just behind the nav
+                rail. MediaItem covers Movie/Episode/Collection/Person detail (see
+                MediaItemScreen.tsx) - only MovieDetail.tsx currently sets a backdrop, so the
+                others just fall through to this View's own colors.background below, same as
+                before. Every other screen keeps the navigator's default opaque background. */}
             <Drawer.Screen name="Home" component={HomeScreen} options={{ sceneStyle: styles.transparentScene }} />
             <Drawer.Screen name="Search" component={SearchScreen} />
-            <Drawer.Screen name="SeriesOverview" component={SeriesOverviewScreen} />
+            <Drawer.Screen name="SeriesOverview" component={SeriesOverviewScreen} options={{ sceneStyle: styles.transparentScene }} />
             <Drawer.Screen name="MediaItem" component={MediaItemScreen} options={{ sceneStyle: styles.transparentScene }} />
             <Drawer.Screen name="Recordings" component={RecordingsScreen} />
             <Drawer.Screen name="FilteredCollection" component={FilteredCollectionScreen} />

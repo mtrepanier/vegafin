@@ -4,6 +4,7 @@ import { getUserLibraryApi } from '@jellyfin/sdk/lib/utils/api/user-library-api'
 import { getTvShowsApi } from '@jellyfin/sdk/lib/utils/api/tv-shows-api';
 import { getPlaystateApi } from '@jellyfin/sdk/lib/utils/api/playstate-api';
 import { BaseItemKind } from '@jellyfin/sdk/lib/generated-client/models/base-item-kind';
+import { ItemFields } from '@jellyfin/sdk/lib/generated-client/models/item-fields';
 import { ItemSortBy } from '@jellyfin/sdk/lib/generated-client/models/item-sort-by';
 import { SortOrder } from '@jellyfin/sdk/lib/generated-client/models/sort-order';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
@@ -75,8 +76,21 @@ export async function fetchSeasons(userId: string, seriesId: string): Promise<Ba
   return data.Items ?? [];
 }
 
+/** `fields: [People, Overview]` - Jellyfin omits both by default (see the Home hero's own
+ * `HOME_ROW_FIELDS`); without them, `SeriesOverviewScreen.tsx`'s Guest Stars row and its
+ * focused-episode synopsis would always be empty. */
 export async function fetchEpisodes(userId: string, seriesId: string, seasonId?: string): Promise<BaseItemDto[]> {
-  const { data } = await getTvShowsApi(jellyfinClient.api).getEpisodes({ seriesId, userId, seasonId });
+  // enableUserData explicitly requested - same gotcha as homeRows.ts's fetchResumeRow etc: without
+  // it, episode.UserData comes back empty, so EpisodeRow's watched checkmark/favorite
+  // heart/progress bar and FocusedEpisodeFooter's Resume/Watched/Favorite states all silently
+  // read as unset regardless of the server's actual playback state.
+  const { data } = await getTvShowsApi(jellyfinClient.api).getEpisodes({
+    seriesId,
+    userId,
+    seasonId,
+    fields: [ItemFields.People, ItemFields.Overview],
+    enableUserData: true,
+  });
   return data.Items ?? [];
 }
 

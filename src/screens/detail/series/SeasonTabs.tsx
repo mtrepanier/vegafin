@@ -4,6 +4,7 @@ import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base
 import { useTheme } from '../../../theme/ThemeContext';
 import { layout } from '../../../theme/types';
 import { usePinScrollToStart } from '../../../focus/usePinScrollToStart';
+import { formatSeasonLabel } from '../../../util/format';
 
 interface Props {
   seasons: BaseItemDto[];
@@ -57,7 +58,7 @@ export function SeasonTabs({ seasons, selectedIndex, onSelect, autoFocus = true 
                   color: selected ? colors.onPrimaryContainer : colors.onSurfaceVariant,
                 },
               ];
-              return <Text style={tabStyle}>{item.Name}</Text>;
+              return <Text style={tabStyle}>{formatSeasonLabel(item)}</Text>;
             }}
           </Pressable>
         );

@@ -171,3 +171,19 @@ export function formatHeroInfoLine(item: {
 
   return segments;
 }
+
+/**
+ * "Season 1", "Season 2", ... "Specials" for season 0 - built from `IndexNumber` rather than
+ * trusting `season.Name` (`SeasonTabs.tsx`), since a season's `Name` comes straight from
+ * whatever the metadata provider set and isn't reliably in English or reliably present at all.
+ * Falls back to `Name` only when there's no `IndexNumber` to build a label from.
+ */
+export function formatSeasonLabel(season: { IndexNumber?: number | null; Name?: string | null }): string {
+  if (season.IndexNumber === 0) {
+    return 'Specials';
+  }
+  if (season.IndexNumber != null) {
+    return `Season ${season.IndexNumber}`;
+  }
+  return season.Name ?? 'Season';
+}
