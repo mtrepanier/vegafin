@@ -106,6 +106,9 @@ export const en = {
   // Setup / sign-in
   'setup.addServer': 'Add a Jellyfin server',
   'setup.connect': 'Connect',
+  'setup.selectUser': 'Select User',
+  'setup.addUser': 'Add User',
+  'setup.switchServers': 'Switch servers',
   'setup.enterServerAddress': 'Enter a server address.',
   'setup.unableToReachServer': 'Unable to reach the server.',
   'setup.username': 'Username',

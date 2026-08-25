@@ -190,6 +190,29 @@ class ServerRepository {
     this.notify();
   }
 
+  /** Not persisted - only needs to survive the moment between the side nav's avatar button
+   * clearing the session and SetupNavigator mounting fresh right after, in the same app run. */
+  private pendingUserSwitchServerId: string | null = null;
+
+  /** Same as `switchServerOrUser()`, but also remembers which server the session was for, so
+   * `SetupNavigator` can open straight to that server's `UserListScreen` instead of defaulting
+   * to `ServerListScreen`'s "add a server" flow - see `MainDrawerNavigator.tsx`'s avatar
+   * button. A genuine cold start (no session ever restored) has nothing to remember here and
+   * still lands on `ServerListScreen` as before. */
+  async switchUser(serverId: string): Promise<void> {
+    this.pendingUserSwitchServerId = serverId;
+    await this.switchServerOrUser();
+  }
+
+  /** Consumed exactly once, by `SetupNavigator`'s initial-route decision at mount, then
+   * cleared - a later genuine "no session at all" launch, or an explicit "Switch servers" from
+   * `UserListScreen`, shouldn't keep jumping back to this same server. */
+  consumePendingUserSwitchServerId(): string | null {
+    const id = this.pendingUserSwitchServerId;
+    this.pendingUserSwitchServerId = null;
+    return id;
+  }
+
   static newUser(partial: Pick<JellyfinUser, 'id' | 'name' | 'serverId' | 'accessToken'>): JellyfinUser {
     return {
       pin: null,

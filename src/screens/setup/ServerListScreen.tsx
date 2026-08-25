@@ -57,8 +57,13 @@ export function ServerListScreen() {
         throw firstError instanceof Error ? firstError : new Error(t('setup.unableToReachServer'));
       }
 
+      // Reuse an already-known server's own id when the resolved URL matches one - a fresh
+      // generateId() here regardless created a second, duplicate entry for the same server
+      // (upsertServer only dedupes by id, and a brand new id never matches an existing one)
+      // whenever someone re-entered a URL they'd already connected to before.
+      const existingId = serverRepository.listServers().find((s) => s.server.url === resolvedUrl)?.server.id;
       const server = {
-        id: generateId(),
+        id: existingId ?? generateId(),
         name: serverName,
         url: resolvedUrl,
         version: serverVersion,

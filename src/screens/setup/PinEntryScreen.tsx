@@ -31,7 +31,10 @@ export function PinEntryScreen() {
     if (user?.pin && next.length >= user.pin.length) {
       if (next === user.pin && entry) {
         setError(false);
-        await serverRepository.changeUser(entry.server, { ...user, pin: null });
+        // Was `{ ...user, pin: null }` - silently erased the PIN on every correct entry,
+        // leaving the profile unprotected from then on. `user` unchanged keeps it set for
+        // next time, matching what a PIN lock is actually supposed to do.
+        await serverRepository.changeUser(entry.server, user);
       } else {
         setError(true);
         setPin('');
