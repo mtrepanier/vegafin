@@ -49,3 +49,36 @@ export const defaultUserPreferences = (): JellyfinUserPreferences => ({
   preferredSubtitleLanguage: USE_USER_PROFILE,
   subtitleMode: 'USE_USER_PROFILE',
 });
+
+export type ThemeMusicVolume = 'disabled' | 'low' | 'medium' | 'high' | 'full';
+export type ShowNextUpTiming = 'atEnd' | 'duringCredits' | 'never';
+
+/**
+ * Device-local app preferences (ui/preferences equivalent) - distinct from
+ * `JellyfinUserPreferences` above, which is per-Jellyfin-user audio/subtitle language
+ * preference synced as part of that user's own record. These are global to the device/app
+ * install, not tied to whichever user is currently signed in, matching the side nav's Settings
+ * entry being a fixed menu item rather than per-profile. See `AppSettingsRepository.ts`.
+ */
+export interface AppSettings {
+  showClock: boolean;
+  themeMusicVolume: ThemeMusicVolume;
+  hideControlsAfterSec: number;
+  skipForwardSec: number;
+  skipBackwardSec: number;
+  showNextUp: ShowNextUpTiming;
+  autoPlayNextUp: boolean;
+}
+
+// Matches this app's own previously-hardcoded playback constants (PlaybackScreens.tsx's
+// CONTROLS_HIDE_DELAY_MS/SEEK_FORWARD_SECONDS/SEEK_BACK_SECONDS) so wiring the settings screen
+// up to them didn't change anyone's actual playback behavior on the day this was added.
+export const defaultAppSettings = (): AppSettings => ({
+  showClock: true,
+  themeMusicVolume: 'medium',
+  hideControlsAfterSec: 5,
+  skipForwardSec: 30,
+  skipBackwardSec: 10,
+  showNextUp: 'duringCredits',
+  autoPlayNextUp: true,
+});

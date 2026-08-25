@@ -8,6 +8,7 @@ import { MediaStreamType } from '@jellyfin/sdk/lib/generated-client/models/media
 import type { MediaStream } from '@jellyfin/sdk/lib/generated-client/models/media-stream';
 import { useTheme } from '../../theme/ThemeContext';
 import { useCurrentUser } from '../../services/storage/ServerRepositoryContext';
+import { useAppSettings } from '../../services/storage/AppSettingsContext';
 import { fetchItem, fetchPlaylistItems } from '../../services/jellyfin/detail';
 import {
   negotiatePlayback,
@@ -21,14 +22,15 @@ import { ShakaPlayer } from '../../w3cmedia/shakaplayer/ShakaPlayer';
 import type { RootStackParamList } from '../../navigation/types';
 
 const PROGRESS_REPORT_INTERVAL_MS = 5000;
-const SEEK_FORWARD_SECONDS = 30;
-const SEEK_BACK_SECONDS = 10;
 /** Vega delivers both key phases of one physical press (down + up, plus for some keys a
  * distinct "_up" eventType), so a naive switch on eventType fires every command twice.
  * De-duping on the normalized type within this window collapses that back to one action. */
 const KEY_EVENT_DEDUPE_MS = 350;
 const SHAKA_LOAD_TIMEOUT_MS = 20000;
-const CONTROLS_HIDE_DELAY_MS = 5000;
+// Skip-seconds and the controls auto-hide delay used to be fixed here (30/10/5) - now read
+// from AppSettings (Settings screen's Playback section) instead, with defaultAppSettings()
+// carrying forward these exact same numbers so nobody's actual playback behavior changed the
+// day that setting screen was added.
 
 /** negotiatePlayback always transcodes to HLS, so this is effectively always true - kept as an
  * explicit check (rather than assumed) for parity with AmbientFlare/astra-tv, a separate
@@ -75,6 +77,7 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
   const currentUser = useCurrentUser();
   const userId = currentUser?.user.id;
   const keplerAppStateManager = useKeplerAppStateManager();
+  const { hideControlsAfterSec, skipForwardSec, skipBackwardSec } = useAppSettings();
 
   const [title, setTitle] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -126,8 +129,8 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
       if (!playerRef.current?.paused) {
         setShowControls(false);
       }
-    }, CONTROLS_HIDE_DELAY_MS);
-  }, [clearControlsHideTimer]);
+    }, hideControlsAfterSec * 1000);
+  }, [clearControlsHideTimer, hideControlsAfterSec]);
 
   const revealControls = useCallback(
     (autoHide = true) => {
@@ -532,18 +535,18 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
         case 'right':
         case 'forward':
         case 'skip_forward':
-          seekBy(activePlayer, SEEK_FORWARD_SECONDS);
+          seekBy(activePlayer, skipForwardSec);
           break;
         case 'left':
         case 'rewind':
         case 'skip_backward':
-          seekBy(activePlayer, -SEEK_BACK_SECONDS);
+          seekBy(activePlayer, -skipBackwardSec);
           break;
         default:
           break;
       }
     },
-    [onExit, seekBy, revealControls, pickerOpen],
+    [onExit, seekBy, revealControls, pickerOpen, skipForwardSec, skipBackwardSec],
   );
   useTVEventHandler(handleTVEvent);
 

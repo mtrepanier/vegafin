@@ -50,7 +50,7 @@ export type DrawerParamList = {
 export type RootStackParamList = {
   Main: undefined; // Hosts the drawer navigator (DrawerParamList).
   HomeSettings: undefined;
-  Settings: { screen: string };
+  Settings: undefined;
   SubtitleSettings: { hdr: boolean };
   UserAppPreferences: undefined;
   Playback: {

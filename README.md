@@ -15,7 +15,7 @@ Wholphin's source, if you want to compare, lives at
 [damontecres/Wholphin](https://github.com/damontecres/Wholphin) and is referenced in some
 code comments as "the Kotlin source."
 
-## Status: Phase 1 (home, library, detail, playback)
+## Status: Phase 1 done, Phase 2 in progress (settings)
 
 Phase 0's scaffold (navigation graph, auth/session, theming) is done, and Phase 1 now adds:
 
@@ -48,12 +48,20 @@ Phase 0's scaffold (navigation graph, auth/session, theming) is done, and Phase 
   correction below for why direct play was dropped), resume position, 5s progress reporting,
   full remote-control input (play/pause, fast-forward/rewind, back, all confirmed working on
   the Vega Virtual Device), a custom on-screen title/play-pause/progress-bar/track-picker UI
-  that auto-hides after 5s of inactivity (matching the Android client's behavior), and Quick
-  Connect sign-in alongside username/password. See the correction below for the actual player
-  architecture — it's not what an earlier draft of this README described.
+  that auto-hides after a configurable delay (matching the Android client's behavior, now
+  driven by the Settings screen below rather than a fixed 5s), and Quick Connect sign-in
+  alongside username/password. See the correction below for the actual player architecture —
+  it's not what an earlier draft of this README described.
+- **A first Settings screen** (Phase 2's first slice): Interface (Show Clock, Play Theme Music
+  volume), Playback (hide-controls delay, skip forward/backward seconds, Show Next Up timing,
+  Auto Play Next Up), a placeholder User Settings section (interface language, not wired up
+  yet), and About (app version). Reachable from the side nav's last row. See
+  [Settings](#settings-settingsscreentsx) below for what's actually wired to real behavior
+  versus what's a persisted-but-inert placeholder so far.
 
-Still not implemented: settings screens, search, subtitle customization/delay, trickplay, skip
-intro/outro, live TV, music playback, Seerr/Jellyseerr discover. See [Roadmap](#roadmap).
+Still not implemented: the *behavior* behind Play Theme Music/Show Next Up/Auto Play Next Up,
+interface language switching, update checking, search, subtitle customization/delay, trickplay,
+skip intro/outro, live TV, music playback, Seerr/Jellyseerr discover. See [Roadmap](#roadmap).
 
 ### Correction: playback uses KeplerVideoSurfaceView + a vendored Shaka Player, not KeplerVideoView
 
@@ -533,6 +541,49 @@ Guest Stars → "More Like This".
   `height: 44` (2 lines' worth of `styles.overview`'s own `lineHeight`) is what actually keeps
   the space constant regardless of how much (or how little) text is actually there.
 
+### Settings (`SettingsScreen.tsx`)
+
+Phase 2's first slice: a flat, single-screen list of sections (Interface, Playback, User
+Settings, About) rather than a nested settings navigator - `RootStackParamList`'s `Settings`
+route takes no params (changed from an unused `{ screen: string }` placeholder) since there's
+only one screen's worth of options so far. Reached from a new "Settings" row appended after the
+side nav's library rows (`MainDrawerNavigator.tsx`) - always last, navigated via
+`navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.navigate('Settings')`
+since Settings is a bare full-screen stack push (`RootStackParamList`), not drawer chrome
+(`DrawerParamList`), the same distinction every other Settings-ish screen already followed.
+
+- **Persistence is a new `AppSettingsRepository`, deliberately separate from
+  `ServerRepository`'s existing `JellyfinUserPreferences`.** The latter is per-Jellyfin-user
+  audio/subtitle language preference, saved as part of that user's own record and already
+  wired up before this. `AppSettings` (device-local, `AsyncStorage` key
+  `vegafin.appSettings.v1`) is global to the app install instead, not tied to whichever user is
+  signed in - matching the side nav's Settings entry being a fixed menu item rather than a
+  per-profile one. Same `useSyncExternalStore` + module-singleton + subscriber-list shape as
+  `ServerRepository.ts` either way; `AppSettingsProvider` (`App.tsx`) needs no loading gate
+  unlike `ServerRepositoryProvider` - `getSnapshot()` already returns sensible defaults before
+  `init()` resolves, since nothing here needs to block on session restore the way sign-in does.
+- **No slider component exists on this platform** (checked: not a public export of
+  `@amazon-devices/react-native-w3cmedia`, which only uses one internally for its own seek bar,
+  and no `@react-native-community/slider`-equivalent dependency exists either) **- and D-pad
+  remotes have no drag gesture for one anyway.** `SettingsStepper.tsx` is the TV-native
+  replacement everywhere the ask was "a slider": a `< value >` row cycling through a curated
+  option list (seconds presets for the numeric settings, named options for the enums), not a
+  raw min/max/step range - a real 1-120s range would mean holding D-pad right for dozens of
+  presses to reach the far end.
+- **Skip forward/backward and the controls auto-hide delay used to be hardcoded in
+  `PlaybackScreens.tsx`** (`SEEK_FORWARD_SECONDS`/`SEEK_BACK_SECONDS`/`CONTROLS_HIDE_DELAY_MS` -
+  30/10/5) **- now read from `useAppSettings()` instead**, with `defaultAppSettings()` carrying
+  the exact same numbers forward so installing this didn't change anyone's actual playback
+  behavior. "Show Clock" (`HomeHero.tsx`) is the only other setting wired to real behavior so
+  far.
+- **Play Theme Music, Show Next Up, and Auto Play Next Up persist correctly but don't drive
+  anything yet, and Interface Language/Updates are inert display rows, not fake working
+  controls.** Theme-song audio playback and an end-of-playback Next Up prompt are their own
+  separate features that haven't been built - rather than wire a setting up to nothing or guess
+  at behavior, `SettingsInertRow.tsx` renders a plain `View`, not a `Pressable`, for anything
+  without a real control behind it yet, so D-pad navigation skips it entirely instead of
+  landing on a focusable dead end.
+
 ### Auth/session
 
 `ServerRepository.ts` ports `ServerRepository.kt`'s responsibilities: add a server, sign in
@@ -640,15 +691,17 @@ vega device launch-app --directory .
 colocated with `src/` — see `jest.config.json`'s `testRegex`). Coverage is intentionally
 scoped to the **service/business-logic layer**, not screens or components:
 
-- Auth/session (`ServerRepository`), server URL scheme resolution/probing (`serverUrl`,
-  `JellyfinClient`), the Jellyfin API layer (`playback` negotiation + progress reporting,
-  `homeRows` including the Continue Watching/Next Up split, `library`, `detail` including
-  `fetchLocalTrailers` and `fetchEpisodes`'s `People` field request, `images` including the
-  hero's series-aware poster/logo fallbacks and the side nav's avatar lookup, `episodeBadge`'s
-  "E5" corner-badge labeling, `libraryIconName`'s CollectionType→icon mapping, the `ItemPager`
-  pagination hook), the pure formatting helpers in `util/format.ts` (including the shared
-  `formatHeroInfoLine` and `formatSeasonLabel`), `util/useCurrentTime.ts` (the hero clock's
-  interval hook), theming (`ThemeContext`), and the focus system's
+- Auth/session (`ServerRepository`), device-local app preferences (`AppSettingsRepository` -
+  same `subscribe`/`getSnapshot`/`init` shape as `ServerRepository`, see
+  [Settings](#settings-settingsscreentsx) above), server URL scheme resolution/probing
+  (`serverUrl`, `JellyfinClient`), the Jellyfin API layer (`playback` negotiation + progress
+  reporting, `homeRows` including the Continue Watching/Next Up split, `library`, `detail`
+  including `fetchLocalTrailers` and `fetchEpisodes`'s `People` field request, `images`
+  including the hero's series-aware poster/logo fallbacks and the side nav's avatar lookup,
+  `episodeBadge`'s "E5" corner-badge labeling, `libraryIconName`'s CollectionType→icon mapping,
+  the `ItemPager` pagination hook), the pure formatting helpers in `util/format.ts` (including
+  the shared `formatHeroInfoLine` and `formatSeasonLabel`), `util/useCurrentTime.ts` (the hero
+  clock's interval hook), theming (`ThemeContext`), and the focus system's
   `useLastFocusedIndex`, `usePinScrollToStart`, and `useFocusGroupExpanded` hooks (the last one
   backs the side nav's collapse/expand-on-focus behavior - pulled out of
   `MainDrawerNavigator.tsx` specifically so it has an independent test rather than only being
@@ -657,12 +710,12 @@ scoped to the **service/business-logic layer**, not screens or components:
   `@jellyfin/sdk` dependency itself (see the URL/URLSearchParams gotcha above). Pins the
   patch's own input/output contract; can't reproduce the platform bug it fixes, since Jest
   runs on Node's spec-compliant `URL`.
-- Deliberately **not** covered: `HomeScreen`/library/detail screens, `PlaybackScreens.tsx`,
-  navigation, and the setup screens. These are tightly coupled to native Kepler view
-  components (`KeplerVideoSurfaceView`, `useTVEventHandler`, `VideoPlayer`, drawer/stack
-  navigators) that would need heavy, low-confidence mocking to exercise under Jest. As with
-  the rest of this project, those are verified by actually running the app on the Vega
-  Virtual Device (see [Getting started](#getting-started) above), not by unit tests.
+- Deliberately **not** covered: `HomeScreen`/library/detail/settings screens,
+  `PlaybackScreens.tsx`, navigation, and the setup screens. These are tightly coupled to native
+  Kepler view components (`KeplerVideoSurfaceView`, `useTVEventHandler`, `VideoPlayer`,
+  drawer/stack navigators) that would need heavy, low-confidence mocking to exercise under
+  Jest. As with the rest of this project, those are verified by actually running the app on the
+  Vega Virtual Device (see [Getting started](#getting-started) above), not by unit tests.
 - Also not covered: `src/w3cmedia/` (vendored/compiled Shaka Player + polyfills — same
   "vendored, not hand-written" reasoning that excludes it from lint).
 
@@ -686,8 +739,13 @@ runner.
   user-configurable home rows, alphabet-jump library browsing, trickplay, skip intro/outro,
   subtitle search/download/delay, WebSocket remote-control commands — see the scope notes
   throughout `src/services/jellyfin/` and `src/screens/`.
-- **Phase 2** — Settings screens, search, subtitle customization, trickplay, skip
-  intro/outro, multi-server/user switching UI, PIN-lock routing.
+- **Phase 2** (in progress) — A first [Settings](#settings-settingsscreentsx) screen is done
+  (Interface/Playback/User Settings/About, reachable from the side nav's last row); skip
+  forward/backward and the controls auto-hide delay are wired to real playback behavior, Show
+  Clock to the Home hero. Still open: the behavior behind Play Theme Music (theme-song audio),
+  Show Next Up/Auto Play Next Up (an end-of-playback prompt), interface language switching,
+  update checking, plus search, subtitle customization, trickplay, skip intro/outro,
+  multi-server/user switching UI, PIN-lock routing.
 - **Phase 3** — Live TV guide + DVR, music playback (now playing/visualizer/lyrics),
   Jellyseerr discover integration, screensaver/slideshow, photo albums.
 
@@ -708,7 +766,9 @@ src/
     jellyfin/                 JellyfinClient.ts (@jellyfin/sdk wrapper), images.ts, ItemPager.ts,
                                homeRows.ts, library.ts, detail.ts, playback.ts, libraryIcons.ts,
                                episodeBadge.ts
-    storage/ServerRepository.ts   Session/auth (mirrors data/ServerRepository.kt)
+    storage/ServerRepository.ts   Session/auth (mirrors data/ServerRepository.kt),
+                               AppSettingsRepository.ts/AppSettingsContext.tsx (device-local app
+                               preferences - see Settings above)
   components/                 ItemRow/ItemGrid/PosterRow, cards/, Clock.tsx (hero top-right
                                clock), HeroInfoLine.tsx (shared rating/info line - see Home
                                screen above), IconButton.tsx
@@ -724,6 +784,10 @@ src/
                                above), series/ (SeasonTabs/EpisodeRow/FocusedEpisodeFooter - the
                                rest of SeriesOverview's parts)
     playback/                 PlaybackScreen, PlaybackListScreen (KeplerVideoSurfaceView + ShakaPlayer)
+    settings/                 SettingsScreen.tsx (real - see Settings above) plus the
+                               still-Phase-2-stub HomeSettings/SubtitleSettings/
+                               UserAppPreferences screens; SettingsToggle/SettingsStepper/
+                               SettingsSection/SettingsInertRow row components
     setup/                     ServerList/UserList (password + Quick Connect)/PinEntry screens
   w3cmedia/                   Vendored Shaka Player + DOM/URL/fetch polyfills - see the playback
                                correction above. Excluded from lint (.eslintrc ignorePatterns).
