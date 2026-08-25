@@ -9,6 +9,8 @@ import type { QuickConnectResult } from '@jellyfin/sdk/lib/generated-client/mode
 import { jellyfinClient } from '../../services/jellyfin/JellyfinClient';
 import { serverRepository } from '../../services/storage/ServerRepository';
 import { useTheme } from '../../theme/ThemeContext';
+import { useT } from '../../i18n/useTranslation';
+import type { TFunction } from '../../i18n/useTranslation';
 import type { JellyfinServer } from '../../services/storage/types';
 import type { SetupStackParamList } from '../../navigation/types';
 
@@ -34,13 +36,13 @@ async function getQuickConnectState(api: Api, secret: string): Promise<QuickConn
 
 /** Builds the local JellyfinUser record and commits the session, shared by both the
  * password and Quick Connect sign-in paths. */
-async function signInUser(server: JellyfinServer, user: UserDto, accessToken: string) {
+async function signInUser(server: JellyfinServer, user: UserDto, accessToken: string, t: TFunction) {
   if (!user.Id) {
-    throw new Error('Server did not return a user id');
+    throw new Error(t('setup.serverDidNotReturnUserId'));
   }
   const newUser = {
     id: user.Id,
-    name: user.Name ?? 'User',
+    name: user.Name ?? t('common.user'),
     serverId: server.id,
     accessToken,
     pin: null,
@@ -71,6 +73,7 @@ function QuickConnectPanel({
   onError: (message: string) => void;
 }) {
   const { colors } = useTheme();
+  const t = useT();
   const [code, setCode] = useState<string | null>(null);
   const [authenticating, setAuthenticating] = useState(false);
   const secretRef = useRef<string | null>(null);
@@ -92,7 +95,7 @@ function QuickConnectPanel({
         console.error('[VegaFin] Quick Connect initiate failed:', initiateError);
         if (!cancelledRef.current) {
           const detail = initiateError instanceof Error ? initiateError.message : String(initiateError);
-          onError(`Could not start Quick Connect: ${detail}`);
+          onError(t('setup.couldNotStartQuickConnect', { detail }));
         }
       });
 
@@ -114,9 +117,9 @@ function QuickConnectPanel({
           return;
         }
         if (!auth.AccessToken || !auth.User) {
-          throw new Error('Server did not return an access token');
+          throw new Error(t('setup.serverDidNotReturnAccessToken'));
         }
-        await signInUser(server, auth.User, auth.AccessToken);
+        await signInUser(server, auth.User, auth.AccessToken, t);
       } catch (pollError) {
         const axiosLike = pollError as { config?: { url?: string }; response?: { status?: number; data?: unknown } };
         console.error(
@@ -130,7 +133,7 @@ function QuickConnectPanel({
           setAuthenticating(false);
           const detail = pollError instanceof Error ? pollError.message : String(pollError);
           const bodyText = JSON.stringify(axiosLike?.response?.data);
-          onError(`Quick Connect sign-in failed: ${detail} | url: ${axiosLike?.config?.url} | body: ${bodyText}`);
+          onError(`${t('setup.quickConnectSignInFailed', { detail })} | url: ${axiosLike?.config?.url} | body: ${bodyText}`);
         }
       }
     }, QUICK_CONNECT_POLL_MS);
@@ -149,15 +152,13 @@ function QuickConnectPanel({
       ) : code ? (
         <>
           <Text style={[styles.quickConnectCode, { color: colors.onSurface }]}>{code}</Text>
-          <Text style={[styles.quickConnectHelp, { color: colors.onSurfaceVariant }]}>
-            On your phone or computer, open Jellyfin, go to Quick Connect, and enter this code.
-          </Text>
+          <Text style={[styles.quickConnectHelp, { color: colors.onSurfaceVariant }]}>{t('setup.quickConnectInstructions')}</Text>
         </>
       ) : (
         <ActivityIndicator color={colors.primary} />
       )}
       <Pressable onPress={onCancel} style={styles.quickConnectCancel}>
-        <Text style={{ color: colors.primary }}>Cancel</Text>
+        <Text style={{ color: colors.primary }}>{t('common.cancel')}</Text>
       </Pressable>
     </View>
   );
@@ -168,6 +169,7 @@ function QuickConnectPanel({
 // for RootNavigator automatically once useCurrentUser() reports a restored session.
 export function UserListScreen() {
   const { colors } = useTheme();
+  const t = useT();
   const { params } = useRoute<Route>();
   const entry = serverRepository.listServers().find((s) => s.server.id === params.serverId);
 
@@ -190,7 +192,7 @@ export function UserListScreen() {
   if (!entry) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <Text style={{ color: colors.onBackground }}>Unknown server</Text>
+        <Text style={{ color: colors.onBackground }}>{t('common.unknownServer')}</Text>
       </View>
     );
   }
@@ -204,13 +206,13 @@ export function UserListScreen() {
         authenticateUserByName: { Username: name, Pw: pw },
       });
       if (!data.AccessToken || !data.User) {
-        throw new Error('Server did not return an access token');
+        throw new Error(t('setup.serverDidNotReturnAccessToken'));
       }
-      await signInUser(entry.server, data.User, data.AccessToken);
+      await signInUser(entry.server, data.User, data.AccessToken, t);
       // Navigating away happens automatically: RootNavigator swaps to the main app once
       // useCurrentUser() reports a session (see App.tsx).
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Login failed');
+      setError(e instanceof Error ? e.message : t('setup.loginFailed'));
     }
   };
 
@@ -244,7 +246,7 @@ export function UserListScreen() {
       <TextInput
         value={username}
         onChangeText={setUsername}
-        placeholder="Username"
+        placeholder={t('setup.username')}
         placeholderTextColor={colors.onSurfaceVariant}
         autoCapitalize="none"
         style={[styles.input, { borderColor: colors.border, color: colors.onSurface }]}
@@ -252,7 +254,7 @@ export function UserListScreen() {
       <TextInput
         value={password}
         onChangeText={setPassword}
-        placeholder="Password"
+        placeholder={t('setup.password')}
         placeholderTextColor={colors.onSurfaceVariant}
         secureTextEntry
         style={[styles.input, { borderColor: colors.border, color: colors.onSurface }]}
@@ -262,7 +264,7 @@ export function UserListScreen() {
         onPress={() => login(username, password)}
         style={[styles.button, { backgroundColor: colors.primary }]}
       >
-        <Text style={{ color: colors.onPrimary }}>Sign in</Text>
+        <Text style={{ color: colors.onPrimary }}>{t('setup.signIn')}</Text>
       </Pressable>
 
       {quickConnecting ? (
@@ -277,7 +279,7 @@ export function UserListScreen() {
         />
       ) : (
         <Pressable onPress={() => { setError(null); setQuickConnecting(true); }} style={quickConnectButtonStyle}>
-          <Text style={{ color: colors.primary }}>Sign in with a code</Text>
+          <Text style={{ color: colors.primary }}>{t('setup.signInWithCode')}</Text>
         </Pressable>
       )}
     </View>

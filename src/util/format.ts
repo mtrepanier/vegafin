@@ -1,8 +1,18 @@
 import { BaseItemKind } from '@jellyfin/sdk/lib/generated-client/models/base-item-kind';
+import { translate } from '../i18n/translate';
+import type { Language } from '../i18n/translations';
 
 /** Jellyfin durations/positions are in "ticks" (100ns units). */
 const TICKS_PER_MS = 10_000;
 const TICKS_PER_MINUTE = TICKS_PER_MS * 1000 * 60;
+
+/** BCP-47 tag `toLocaleDateString`/`toLocaleTimeString` actually understand - this app's own
+ * `Language` values are bare 'en'/'fr', which `Intl` also accepts, but a real region tag gives
+ * more predictable month-name/AM-PM formatting across Hermes builds than a bare language tag
+ * does. */
+function localeTag(language: Language): string {
+  return language === 'fr' ? 'fr-FR' : 'en-US';
+}
 
 export function ticksToMs(ticks: number): number {
   return Math.round(ticks / TICKS_PER_MS);
@@ -12,7 +22,7 @@ export function msToTicks(ms: number): number {
   return Math.round(ms * TICKS_PER_MS);
 }
 
-export function formatRuntime(runTimeTicks?: number | null): string | undefined {
+export function formatRuntime(runTimeTicks: number | null | undefined, language: Language): string | undefined {
   if (!runTimeTicks) {
     return undefined;
   }
@@ -20,33 +30,35 @@ export function formatRuntime(runTimeTicks?: number | null): string | undefined 
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   if (hours <= 0) {
-    return `${minutes}m`;
+    return translate(language, 'time.minutes', { minutes });
   }
-  return `${hours}h ${minutes}m`;
+  return translate(language, 'time.hoursMinutes', { hours, minutes });
 }
 
-export function formatTimeRemaining(ms: number): string {
+export function formatTimeRemaining(ms: number, language: Language): string {
   const totalMinutes = Math.max(0, Math.round(ms / 60000));
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
-  if (hours <= 0) {
-    return `${minutes}m left`;
-  }
-  return `${hours}h ${minutes}m left`;
+  const value =
+    hours <= 0 ? translate(language, 'time.minutes', { minutes }) : translate(language, 'time.hoursMinutes', { hours, minutes });
+  return translate(language, 'time.left', { value });
 }
 
 /** "2019 • 2h 15m • TV-MA • ★7.4" - mirrors `QuickDetails.kt`. */
-export function formatQuickDetails(item: {
-  ProductionYear?: number | null;
-  RunTimeTicks?: number | null;
-  OfficialRating?: string | null;
-  CommunityRating?: number | null;
-}): string {
+export function formatQuickDetails(
+  item: {
+    ProductionYear?: number | null;
+    RunTimeTicks?: number | null;
+    OfficialRating?: string | null;
+    CommunityRating?: number | null;
+  },
+  language: Language,
+): string {
   const parts: string[] = [];
   if (item.ProductionYear) {
     parts.push(String(item.ProductionYear));
   }
-  const runtime = formatRuntime(item.RunTimeTicks);
+  const runtime = formatRuntime(item.RunTimeTicks, language);
   if (runtime) {
     parts.push(runtime);
   }
@@ -60,13 +72,13 @@ export function formatQuickDetails(item: {
 }
 
 /** "1:07 PM" - the top-right clock. */
-export function formatClockTime(date: Date): string {
-  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+export function formatClockTime(date: Date, language: Language): string {
+  return date.toLocaleTimeString(localeTag(language), { hour: 'numeric', minute: '2-digit' });
 }
 
 /** "Jun 19, 2026" */
-export function formatFullDate(iso: string): string {
-  return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+export function formatFullDate(iso: string, language: Language): string {
+  return new Date(iso).toLocaleDateString(localeTag(language), { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 /**
@@ -122,33 +134,36 @@ export type HeroInfoSegment =
  *   (`formatTimeRemaining`) - not "Ends at HH:MM", which an earlier version of this line showed
  *   instead.
  */
-export function formatHeroInfoLine(item: {
-  Type?: BaseItemKind;
-  ParentIndexNumber?: number | null;
-  IndexNumber?: number | null;
-  PremiereDate?: string | null;
-  ProductionYear?: number | null;
-  RunTimeTicks?: number | null;
-  OfficialRating?: string | null;
-  CommunityRating?: number | null;
-  CriticRating?: number | null;
-  UserData?: { PlaybackPositionTicks?: number | null; PlayedPercentage?: number | null } | null;
-}): HeroInfoSegment[] {
+export function formatHeroInfoLine(
+  item: {
+    Type?: BaseItemKind;
+    ParentIndexNumber?: number | null;
+    IndexNumber?: number | null;
+    PremiereDate?: string | null;
+    ProductionYear?: number | null;
+    RunTimeTicks?: number | null;
+    OfficialRating?: string | null;
+    CommunityRating?: number | null;
+    CriticRating?: number | null;
+    UserData?: { PlaybackPositionTicks?: number | null; PlayedPercentage?: number | null } | null;
+  },
+  language: Language,
+): HeroInfoSegment[] {
   const segments: HeroInfoSegment[] = [];
   const text = (value: string) => segments.push({ kind: 'text', value });
 
   if (item.Type === BaseItemKind.Episode) {
     if (item.ParentIndexNumber != null && item.IndexNumber != null) {
-      text(`S${item.ParentIndexNumber} E${item.IndexNumber}`);
+      text(translate(language, 'episode.seasonEpisode', { season: item.ParentIndexNumber, episode: item.IndexNumber }));
     }
     if (item.PremiereDate) {
-      text(formatFullDate(item.PremiereDate));
+      text(formatFullDate(item.PremiereDate, language));
     }
   } else {
     if (item.ProductionYear) {
       text(String(item.ProductionYear));
     }
-    const runtime = formatRuntime(item.RunTimeTicks);
+    const runtime = formatRuntime(item.RunTimeTicks, language);
     if (runtime) {
       text(runtime);
     }
@@ -166,7 +181,7 @@ export function formatHeroInfoLine(item: {
 
   const remainingMs = remainingRuntimeMs(item);
   if (remainingMs != null) {
-    text(formatTimeRemaining(remainingMs));
+    text(formatTimeRemaining(remainingMs, language));
   }
 
   return segments;
@@ -178,12 +193,12 @@ export function formatHeroInfoLine(item: {
  * whatever the metadata provider set and isn't reliably in English or reliably present at all.
  * Falls back to `Name` only when there's no `IndexNumber` to build a label from.
  */
-export function formatSeasonLabel(season: { IndexNumber?: number | null; Name?: string | null }): string {
+export function formatSeasonLabel(season: { IndexNumber?: number | null; Name?: string | null }, language: Language): string {
   if (season.IndexNumber === 0) {
-    return 'Specials';
+    return translate(language, 'season.specials');
   }
   if (season.IndexNumber != null) {
-    return `Season ${season.IndexNumber}`;
+    return translate(language, 'season.numbered', { number: season.IndexNumber });
   }
-  return season.Name ?? 'Season';
+  return season.Name ?? translate(language, 'season.fallback');
 }

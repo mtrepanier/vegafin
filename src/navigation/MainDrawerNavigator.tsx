@@ -31,6 +31,8 @@ import { userImageUrl } from '../services/jellyfin/images';
 import { libraryIconName } from '../services/jellyfin/libraryIcons';
 import { ScreenBackdropContext } from './screenBackdropContext';
 import { ScreenBackdrop } from '../screens/ScreenBackdrop';
+import { useT } from '../i18n/useTranslation';
+import type { TranslationKey } from '../i18n/translations';
 import type { DrawerParamList, RootStackParamList } from './types';
 
 const Drawer = createDrawerNavigator<DrawerParamList>();
@@ -38,10 +40,10 @@ const Drawer = createDrawerNavigator<DrawerParamList>();
 const EXPANDED_WIDTH = 240;
 const COLLAPSED_WIDTH = 72;
 
-const FIXED_ITEMS: { label: string; route: keyof DrawerParamList; icon: string }[] = [
-  { label: 'Search', route: 'Search', icon: 'search' },
-  { label: 'Home', route: 'Home', icon: 'home' },
-  { label: 'Favorites', route: 'Favorites', icon: 'favorite' },
+const FIXED_ITEMS: { labelKey: TranslationKey; route: keyof DrawerParamList; icon: string }[] = [
+  { labelKey: 'nav.search', route: 'Search', icon: 'search' },
+  { labelKey: 'nav.home', route: 'Home', icon: 'home' },
+  { labelKey: 'nav.favorites', route: 'Favorites', icon: 'favorite' },
 ];
 
 /**
@@ -103,6 +105,7 @@ function DrawerRow({
 // chrome (Backdrop.kt) without being menu entries themselves.
 function DrawerContent({ navigation, state }: DrawerContentComponentProps) {
   const { colors } = useTheme();
+  const t = useT();
   const currentUser = useCurrentUser();
   const userId = currentUser?.user.id;
   const { expanded, reveal, release } = useContext(DrawerExpandedContext);
@@ -151,7 +154,7 @@ function DrawerContent({ navigation, state }: DrawerContentComponentProps) {
         {expanded ? (
           <View style={styles.headerText}>
             <Text numberOfLines={1} style={[styles.username, { color: colors.onSurface }]}>
-              {currentUser?.user.name ?? 'User'}
+              {currentUser?.user.name ?? t('common.user')}
             </Text>
             <Text numberOfLines={1} style={[styles.serverName, { color: colors.onSurfaceVariant }]}>
               {currentUser?.server.name ?? currentUser?.server.url}
@@ -171,7 +174,7 @@ function DrawerContent({ navigation, state }: DrawerContentComponentProps) {
             <DrawerRow
               key={item.route}
               icon={item.icon}
-              label={item.label}
+              label={t(item.labelKey)}
               active={state.routeNames[state.index] === item.route}
               expanded={expanded}
               onFocus={reveal}
@@ -186,12 +189,13 @@ function DrawerContent({ navigation, state }: DrawerContentComponentProps) {
                 <DrawerRow
                   key={library.Id}
                   icon={libraryIconName(library)}
-                  label={library.Name ?? 'Library'}
+                  label={library.Name ?? t('common.library')}
                   expanded={expanded}
                   onFocus={reveal}
                   onBlur={release}
                   onPress={() =>
-                    library.Id && navigation.navigate('ItemGrid', { title: library.Name ?? 'Library', parentId: library.Id })
+                    library.Id &&
+                    navigation.navigate('ItemGrid', { title: library.Name ?? t('common.library'), parentId: library.Id })
                   }
                 />
               ))}
@@ -203,7 +207,7 @@ function DrawerContent({ navigation, state }: DrawerContentComponentProps) {
               the drawer's *parent* stack navigator rather than the drawer's own navigate(). */}
           <DrawerRow
             icon="settings"
-            label="Settings"
+            label={t('nav.settings')}
             expanded={expanded}
             onFocus={reveal}
             onBlur={release}

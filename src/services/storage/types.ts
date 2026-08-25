@@ -54,6 +54,15 @@ export type ThemeMusicVolume = 'disabled' | 'low' | 'medium' | 'high' | 'full';
 export type ShowNextUpTiming = 'atEnd' | 'duringCredits' | 'never';
 
 /**
+ * `'system'` follows the device's own locale (`src/i18n/useSystemLocale.ts`) rather than
+ * pinning a language outright - see `src/i18n/`. Distinct from `JellyfinUser.uiLanguage`
+ * above, which is an existing per-signed-in-user field that isn't wired to anything yet; this
+ * one drives the app's actual UI language and lives on `AppSettings` instead, matching every
+ * other Settings-screen preference being device-local rather than per-profile.
+ */
+export type UiLanguage = 'system' | 'en' | 'fr';
+
+/**
  * Device-local app preferences (ui/preferences equivalent) - distinct from
  * `JellyfinUserPreferences` above, which is per-Jellyfin-user audio/subtitle language
  * preference synced as part of that user's own record. These are global to the device/app
@@ -68,6 +77,7 @@ export interface AppSettings {
   skipBackwardSec: number;
   showNextUp: ShowNextUpTiming;
   autoPlayNextUp: boolean;
+  uiLanguage: UiLanguage;
 }
 
 // Matches this app's own previously-hardcoded playback constants (PlaybackScreens.tsx's
@@ -81,4 +91,5 @@ export const defaultAppSettings = (): AppSettings => ({
   skipBackwardSec: 10,
   showNextUp: 'duringCredits',
   autoPlayNextUp: true,
+  uiLanguage: 'system',
 });

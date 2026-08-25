@@ -2,6 +2,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View, type PressableStateCallbackType } from 'react-native';
 import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
 import { useTheme } from '../../theme/ThemeContext';
+import type { TFunction } from '../../i18n/useTranslation';
 
 export interface StepperOption<T> {
   value: T;
@@ -10,9 +11,11 @@ export interface StepperOption<T> {
 
 /** A curated preset list, not a raw min/max/step - a plain numeric range would mean pressing
  * D-pad right dozens of times to get from 1s to 120s. Both `SettingsStepper` callers below
- * (numeric seconds and named enums) share this one `{value, label}[]` shape either way. */
-export function numericStepperOptions(values: number[], suffix: string): StepperOption<number>[] {
-  return values.map((value) => ({ value, label: `${value}${suffix}` }));
+ * (numeric seconds and named enums) share this one `{value, label}[]` shape either way. Every
+ * numeric stepper in this app happens to be a seconds value, hence the one `settings.seconds`
+ * key rather than a caller-supplied suffix string (which wouldn't localize on its own). */
+export function secondsStepperOptions(values: number[], t: TFunction): StepperOption<number>[] {
+  return values.map((value) => ({ value, label: t('settings.seconds', { value }) }));
 }
 
 interface Props<T> {

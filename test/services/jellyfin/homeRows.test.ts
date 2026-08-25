@@ -56,10 +56,19 @@ describe('fetchUserLibraries', () => {
 describe('fetchDefaultHomeRowConfigs', () => {
   it('always leads with continueWatching then nextUp rows', async () => {
     mockGetUserViews.mockResolvedValue({ data: { Items: [] } });
-    const configs = await fetchDefaultHomeRowConfigs('user-1');
+    const configs = await fetchDefaultHomeRowConfigs('user-1', 'en');
     expect(configs.slice(0, 2)).toEqual([
       { key: 'continueWatching', kind: 'continueWatching', title: 'Continue Watching' },
       { key: 'nextUp', kind: 'nextUp', title: 'Next Up' },
+    ]);
+  });
+
+  it('titles rows in the given language', async () => {
+    mockGetUserViews.mockResolvedValue({ data: { Items: [] } });
+    const configs = await fetchDefaultHomeRowConfigs('user-1', 'fr');
+    expect(configs.slice(0, 2)).toEqual([
+      { key: 'continueWatching', kind: 'continueWatching', title: 'Continuer à regarder' },
+      { key: 'nextUp', kind: 'nextUp', title: 'À suivre' },
     ]);
   });
 
@@ -74,7 +83,7 @@ describe('fetchDefaultHomeRowConfigs', () => {
       },
     });
 
-    const configs = await fetchDefaultHomeRowConfigs('user-1');
+    const configs = await fetchDefaultHomeRowConfigs('user-1', 'en');
 
     expect(configs).toEqual([
       { key: 'continueWatching', kind: 'continueWatching', title: 'Continue Watching' },
@@ -94,7 +103,7 @@ describe('fetchDefaultHomeRowConfigs', () => {
       },
     });
 
-    const configs = await fetchDefaultHomeRowConfigs('user-1');
+    const configs = await fetchDefaultHomeRowConfigs('user-1', 'en');
     expect(configs).toEqual([
       { key: 'continueWatching', kind: 'continueWatching', title: 'Continue Watching' },
       { key: 'nextUp', kind: 'nextUp', title: 'Next Up' },
@@ -103,7 +112,7 @@ describe('fetchDefaultHomeRowConfigs', () => {
 
   it('trims the title when the library has no Name', async () => {
     mockGetUserViews.mockResolvedValue({ data: { Items: [{ Id: 'lib-1', CollectionType: 'movies' }] } });
-    const configs = await fetchDefaultHomeRowConfigs('user-1');
+    const configs = await fetchDefaultHomeRowConfigs('user-1', 'en');
     expect(configs[2].title).toBe('Latest');
   });
 });

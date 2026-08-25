@@ -11,6 +11,7 @@ import { IconButton } from '../../components/IconButton';
 import { ItemGrid } from '../../components/ItemGrid';
 import { PosterCard } from '../../components/cards/PosterCard';
 import { navigateToItem } from '../../navigation/navigateToItem';
+import { useT } from '../../i18n/useTranslation';
 import type { AppNavigationProp, DrawerParamList } from '../../navigation/types';
 
 interface Props {
@@ -22,6 +23,7 @@ interface Props {
 // type toggle - see the plan's Collection detail scope note).
 export function CollectionDetail({ itemId, navigation }: Props) {
   const { colors } = useTheme();
+  const t = useT();
   const currentUser = useCurrentUser();
   const userId = currentUser?.user.id;
   const [item, setItem] = useState<BaseItemDto | null>(null);
@@ -64,7 +66,7 @@ export function CollectionDetail({ itemId, navigation }: Props) {
             return (
               <View style={primaryButtonStyle}>
                 <Icon name="play-arrow" size={22} color={colors.onPrimary} />
-                <Text style={[styles.primaryLabel, { color: colors.onPrimary }]}>Play All</Text>
+                <Text style={[styles.primaryLabel, { color: colors.onPrimary }]}>{t('common.playAll')}</Text>
               </View>
             );
           }}
@@ -73,7 +75,7 @@ export function CollectionDetail({ itemId, navigation }: Props) {
           {({ focused }: PressableStateCallbackType) => (
             <View style={[styles.secondaryButton, { borderColor: focused ? colors.border : colors.surfaceVariant }]}>
               <Icon name="shuffle" size={20} color={colors.onSurfaceVariant} />
-              <Text style={[styles.secondaryLabel, { color: colors.onSurfaceVariant }]}>Shuffle</Text>
+              <Text style={[styles.secondaryLabel, { color: colors.onSurfaceVariant }]}>{t('common.shuffle')}</Text>
             </View>
           )}
         </Pressable>

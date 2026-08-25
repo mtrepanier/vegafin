@@ -3,17 +3,17 @@ import { formatClockTime, formatFullDate, remainingRuntimeMs, formatHeroInfoLine
 
 describe('formatClockTime', () => {
   it('formats as h:mm AM/PM', () => {
-    expect(formatClockTime(new Date(2026, 5, 19, 13, 7))).toBe('1:07 PM');
+    expect(formatClockTime(new Date(2026, 5, 19, 13, 7), 'en')).toBe('1:07 PM');
   });
 
   it('pads single-digit minutes', () => {
-    expect(formatClockTime(new Date(2026, 5, 19, 9, 2))).toBe('9:02 AM');
+    expect(formatClockTime(new Date(2026, 5, 19, 9, 2), 'en')).toBe('9:02 AM');
   });
 });
 
 describe('formatFullDate', () => {
   it('formats an ISO date as "Mon D, YYYY"', () => {
-    expect(formatFullDate(new Date(2026, 5, 19).toISOString())).toBe('Jun 19, 2026');
+    expect(formatFullDate(new Date(2026, 5, 19).toISOString(), 'en')).toBe('Jun 19, 2026');
   });
 });
 
@@ -47,7 +47,7 @@ describe('formatHeroInfoLine', () => {
       IndexNumber: 5,
       PremiereDate: new Date(2026, 5, 19).toISOString(),
     };
-    expect(formatHeroInfoLine(item)).toEqual([
+    expect(formatHeroInfoLine(item, 'en')).toEqual([
       { kind: 'text', value: 'S1 E5' },
       { kind: 'text', value: 'Jun 19, 2026' },
     ]);
@@ -60,7 +60,7 @@ describe('formatHeroInfoLine', () => {
       RunTimeTicks: 90 * 60 * 10_000_000,
       OfficialRating: 'CA-G',
     };
-    expect(formatHeroInfoLine(item)).toEqual([
+    expect(formatHeroInfoLine(item, 'en')).toEqual([
       { kind: 'text', value: '2026' },
       { kind: 'text', value: '1h 30m' },
       { kind: 'text', value: 'CA-G' },
@@ -74,7 +74,7 @@ describe('formatHeroInfoLine', () => {
       CommunityRating: 7.6,
       CriticRating: 92,
     };
-    expect(formatHeroInfoLine(item)).toEqual([
+    expect(formatHeroInfoLine(item, 'en')).toEqual([
       { kind: 'text', value: '2026' },
       { kind: 'communityRating', value: '7.6' },
       { kind: 'criticRating', value: '🍅 92%' },
@@ -89,7 +89,7 @@ describe('formatHeroInfoLine', () => {
       CommunityRating: 8.1,
       CriticRating: 88,
     };
-    expect(formatHeroInfoLine(item)).toEqual([
+    expect(formatHeroInfoLine(item, 'en')).toEqual([
       { kind: 'text', value: 'S1 E5' },
       { kind: 'communityRating', value: '8.1' },
       { kind: 'criticRating', value: '🍅 88%' },
@@ -104,7 +104,7 @@ describe('formatHeroInfoLine', () => {
       RunTimeTicks: 44 * 60 * 10_000_000,
       UserData: { PlayedPercentage: 50 },
     };
-    expect(formatHeroInfoLine(item)).toEqual([
+    expect(formatHeroInfoLine(item, 'en')).toEqual([
       { kind: 'text', value: 'S1 E5' },
       { kind: 'text', value: '22m left' },
     ]);
@@ -112,25 +112,44 @@ describe('formatHeroInfoLine', () => {
 
   it('omits the remaining-time section for an item with no saved position', () => {
     const item = { Type: BaseItemKind.Movie, ProductionYear: 2026, UserData: {} };
-    expect(formatHeroInfoLine(item)).toEqual([{ kind: 'text', value: '2026' }]);
+    expect(formatHeroInfoLine(item, 'en')).toEqual([{ kind: 'text', value: '2026' }]);
+  });
+
+  it('renders in French when given the fr language', () => {
+    const item = {
+      Type: BaseItemKind.Episode,
+      ParentIndexNumber: 1,
+      IndexNumber: 5,
+      RunTimeTicks: 44 * 60 * 10_000_000,
+      UserData: { PlayedPercentage: 50 },
+    };
+    expect(formatHeroInfoLine(item, 'fr')).toEqual([
+      { kind: 'text', value: 'S1 É5' },
+      { kind: 'text', value: 'Il reste 22 min' },
+    ]);
   });
 });
 
 describe('formatSeasonLabel', () => {
   it('builds "Season N" from IndexNumber', () => {
-    expect(formatSeasonLabel({ IndexNumber: 1 })).toBe('Season 1');
-    expect(formatSeasonLabel({ IndexNumber: 12 })).toBe('Season 12');
+    expect(formatSeasonLabel({ IndexNumber: 1 }, 'en')).toBe('Season 1');
+    expect(formatSeasonLabel({ IndexNumber: 12 }, 'en')).toBe('Season 12');
   });
 
   it('labels season 0 "Specials"', () => {
-    expect(formatSeasonLabel({ IndexNumber: 0 })).toBe('Specials');
+    expect(formatSeasonLabel({ IndexNumber: 0 }, 'en')).toBe('Specials');
   });
 
   it('falls back to Name when there is no IndexNumber', () => {
-    expect(formatSeasonLabel({ Name: 'Bonus Content' })).toBe('Bonus Content');
+    expect(formatSeasonLabel({ Name: 'Bonus Content' }, 'en')).toBe('Bonus Content');
   });
 
   it('falls back to a plain "Season" when neither is present', () => {
-    expect(formatSeasonLabel({})).toBe('Season');
+    expect(formatSeasonLabel({}, 'en')).toBe('Season');
+  });
+
+  it('builds "Saison N" in French', () => {
+    expect(formatSeasonLabel({ IndexNumber: 1 }, 'fr')).toBe('Saison 1');
+    expect(formatSeasonLabel({ IndexNumber: 0 }, 'fr')).toBe('Spéciaux');
   });
 });

@@ -5,5 +5,5 @@ import { StubScreen } from '../components/StubScreen';
 // Live TV DVR recordings list - ui/detail/livetv/ equivalent.
 export function RecordingsScreen() {
   const route = useRoute();
-  return <StubScreen name="Recordings" phase="Phase 3" detail={JSON.stringify(route.params ?? {})} />;
+  return <StubScreen name="stub.recordings" phase="Phase 3" detail={JSON.stringify(route.params ?? {})} />;
 }

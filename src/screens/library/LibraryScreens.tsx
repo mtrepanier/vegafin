@@ -11,6 +11,7 @@ import { primaryImageUrl } from '../../services/jellyfin/images';
 import { ItemGrid } from '../../components/ItemGrid';
 import { PosterCard } from '../../components/cards/PosterCard';
 import { navigateToItem } from '../../navigation/navigateToItem';
+import { useT } from '../../i18n/useTranslation';
 import type { AppNavigationProp, DrawerParamList } from '../../navigation/types';
 
 const GRID_COLUMNS = 6;
@@ -29,6 +30,7 @@ interface LibraryGridProps {
  * persisted per-user view preferences (Phase 2 territory). */
 export function LibraryGrid({ title, fetchPage, sortable, onSortChange }: LibraryGridProps) {
   const { colors } = useTheme();
+  const t = useT();
   const navigation = useNavigation<AppNavigationProp<keyof DrawerParamList>>();
   const { items, loading, loadMore } = useInfiniteItemList(fetchPage);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
@@ -50,14 +52,16 @@ export function LibraryGrid({ title, fetchPage, sortable, onSortChange }: Librar
         <View style={styles.toolbarButtons}>
           {sortable ? (
             <Pressable onPress={cycleSort} style={[styles.toolbarButton, { borderColor: colors.border }]}>
-              <Text style={{ color: colors.onSurfaceVariant }}>Sort: {LIBRARY_SORT_OPTIONS[sortIndex].label}</Text>
+              <Text style={{ color: colors.onSurfaceVariant }}>
+                {t('library.sortPrefix', { label: t(LIBRARY_SORT_OPTIONS[sortIndex].labelKey) })}
+              </Text>
             </Pressable>
           ) : null}
           <Pressable
             onPress={() => setViewMode((m) => (m === 'grid' ? 'list' : 'grid'))}
             style={[styles.toolbarButton, { borderColor: colors.border }]}
           >
-            <Text style={{ color: colors.onSurfaceVariant }}>{viewMode === 'grid' ? 'Grid' : 'List'}</Text>
+            <Text style={{ color: colors.onSurfaceVariant }}>{viewMode === 'grid' ? t('library.grid') : t('library.list')}</Text>
           </Pressable>
         </View>
       </View>
@@ -92,6 +96,7 @@ export function FilteredCollectionScreen() {
   const { itemId, parentType } = route.params;
   const currentUser = useCurrentUser();
   const userId = currentUser?.user.id;
+  const t = useT();
 
   const [sort, setSort] = useState<{ sortBy: LibrarySortField; direction: SortDirection }>({
     sortBy: LIBRARY_SORT_OPTIONS[0].value,
@@ -119,7 +124,7 @@ export function FilteredCollectionScreen() {
   return (
     <LibraryGrid
       key={`${itemId}-${parentType}`}
-      title="Browse"
+      title={t('library.browse')}
       fetchPage={fetchPage}
       sortable
       onSortChange={(sortBy, direction) => setSort({ sortBy, direction })}

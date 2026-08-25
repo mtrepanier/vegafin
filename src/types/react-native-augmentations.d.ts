@@ -30,4 +30,22 @@ declare module 'react-native' {
   interface FlatListProps<ItemT> {
     focusItemAlignment?: 'start' | 'center' | 'end';
   }
+
+  // Kepler adds device-locale/timezone retrieval and an app-locale override on top of stock
+  // RN's RTL-only I18nManager (Libraries/ReactNative/I18nManager.d.ts's amznmod_react section) -
+  // see src/i18n/useSystemLocale.ts, the only place this app reads getSystemLocale/addEventListener.
+  interface I18nManagerStatic {
+    getAppLocale: () => string;
+    setAppLocale: (locale: string) => void;
+    getSystemLocale: () => string;
+    getTimezone: () => string;
+    setTimezone: (timezone: string) => void;
+    getSystemTimezone: () => string;
+    resetLocale: () => void;
+    resetTimezone: () => void;
+    addListener: (eventName: string, callback: (...args: unknown[]) => void) => void;
+    addEventListener: (eventName: string, callback: (...args: unknown[]) => void) => { remove: () => void };
+    removeListeners: () => void;
+    SettingEventName: { Locale: string; Timezone: string };
+  }
 }

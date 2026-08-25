@@ -5,6 +5,7 @@ import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base
 import { useTheme } from '../../theme/ThemeContext';
 import { itemOrParentLogoImageUrl } from '../../services/jellyfin/images';
 import { formatHeroInfoLine } from '../../util/format';
+import { useLanguage } from '../../i18n/useLanguage';
 import { HeroInfoLine } from '../../components/HeroInfoLine';
 
 interface Props {
@@ -24,9 +25,10 @@ interface Props {
  * pieces, rather than each screen duplicating this JSX. */
 export function DetailHero({ item, detailItem = item }: Props) {
   const { colors } = useTheme();
+  const language = useLanguage();
   const logoUri = itemOrParentLogoImageUrl(item, 400);
   const episodeTitle = detailItem.Type === BaseItemKind.Episode ? detailItem.Name : undefined;
-  const infoSegments = formatHeroInfoLine(detailItem);
+  const infoSegments = formatHeroInfoLine(detailItem, language);
 
   return (
     <>

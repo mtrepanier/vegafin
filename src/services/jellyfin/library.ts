@@ -7,14 +7,16 @@ import { jellyfinClient } from './JellyfinClient';
 import type { FetchPage, PageResult } from './ItemPager';
 import type { HomeRowRef } from '../../navigation/types';
 import { fetchHomeRowItems, type HomeRowConfig } from './homeRows';
+import type { TranslationKey } from '../../i18n/translations';
 
 /** Sort fields exposed in the library sort-by control (a subset of `ItemSortBy` - mirrors the
- * handful of options Kotlin's `SortByButton.kt` actually surfaces per content type). */
+ * handful of options Kotlin's `SortByButton.kt` actually surfaces per content type). `labelKey`,
+ * not a plain string - `LibraryScreens.tsx` resolves it via `useT()` at display time. */
 export const LIBRARY_SORT_OPTIONS = [
-  { value: ItemSortBy.SortName, label: 'Name' },
-  { value: ItemSortBy.DateCreated, label: 'Date Added' },
-  { value: ItemSortBy.PremiereDate, label: 'Release Date' },
-  { value: ItemSortBy.CommunityRating, label: 'Rating' },
+  { value: ItemSortBy.SortName, labelKey: 'library.sort.name' as TranslationKey },
+  { value: ItemSortBy.DateCreated, labelKey: 'library.sort.dateAdded' as TranslationKey },
+  { value: ItemSortBy.PremiereDate, labelKey: 'library.sort.releaseDate' as TranslationKey },
+  { value: ItemSortBy.CommunityRating, labelKey: 'library.sort.rating' as TranslationKey },
 ] as const;
 
 export type LibrarySortField = (typeof LIBRARY_SORT_OPTIONS)[number]['value'];
