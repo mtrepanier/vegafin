@@ -14,6 +14,7 @@ import { PosterRow } from '../../components/PosterRow';
 import { DetailActionButtons } from './DetailActionButtons';
 import { DetailHero } from './DetailHero';
 import { CastRow } from './CastRow';
+import { TrailerListOverlay } from './TrailerListOverlay';
 import type { AppNavigationProp, DrawerParamList } from '../../navigation/types';
 
 interface Props {
@@ -31,6 +32,7 @@ export function MovieDetail({ itemId, navigation }: Props) {
   const userId = currentUser?.user.id;
   const [item, setItem] = useState<BaseItemDto | null>(null);
   const [similar, setSimilar] = useState<BaseItemDto[]>([]);
+  const [trailersOpen, setTrailersOpen] = useState(false);
   const { setItem: setBackdropItem } = useScreenBackdrop();
 
   useEffect(() => {
@@ -70,6 +72,7 @@ export function MovieDetail({ itemId, navigation }: Props) {
 
   const cast = (item.People ?? []).filter((p) => p.Type === PersonKind.Actor).slice(0, 20);
   const hasTrailer = (item.LocalTrailerCount ?? 0) > 0;
+  const remoteTrailers = item.RemoteTrailers ?? [];
 
   const handlePlay = () => {
     const positionMs = item.UserData?.PlaybackPositionTicks ? ticksToMs(item.UserData.PlaybackPositionTicks) : 0;
@@ -103,33 +106,41 @@ export function MovieDetail({ itemId, navigation }: Props) {
     // then a solid colors.background fill for everything past that, the same way Home's rows
     // rely on it rather than painting their own background - see the README's Home screen
     // section for why a screen's own background would just cover the backdrop back up.
-    <ScrollView ref={scrollRef} focusItemAlignment="start">
-      <View style={styles.content}>
-        <DetailHero item={item} />
+    <View style={styles.root}>
+      <ScrollView ref={scrollRef} focusItemAlignment="start">
+        <View style={styles.content}>
+          <DetailHero item={item} />
 
-        <View style={styles.actions}>
-          <DetailActionButtons
-            item={item}
-            onPlay={handlePlay}
-            onToggleFavorite={handleToggleFavorite}
-            onToggleWatched={handleToggleWatched}
-            onPlayTrailer={hasTrailer ? handlePlayTrailer : undefined}
-          />
+          <View style={styles.actions}>
+            <DetailActionButtons
+              item={item}
+              onPlay={handlePlay}
+              onToggleFavorite={handleToggleFavorite}
+              onToggleWatched={handleToggleWatched}
+              onPlayTrailer={hasTrailer ? handlePlayTrailer : undefined}
+              onOpenTrailers={remoteTrailers.length > 0 ? () => setTrailersOpen(true) : undefined}
+            />
+          </View>
+
+          {item.Taglines?.[0] ? (
+            <Text style={[styles.tagline, { color: colors.onSurfaceVariant }]}>{item.Taglines[0]}</Text>
+          ) : null}
+          {item.Overview ? <Text style={[styles.overview, { color: colors.onSurface }]}>{item.Overview}</Text> : null}
         </View>
 
-        {item.Taglines?.[0] ? (
-          <Text style={[styles.tagline, { color: colors.onSurfaceVariant }]}>{item.Taglines[0]}</Text>
-        ) : null}
-        {item.Overview ? <Text style={[styles.overview, { color: colors.onSurface }]}>{item.Overview}</Text> : null}
-      </View>
+        <CastRow people={cast} navigation={navigation} autoFocus={false} />
+        <PosterRow title="More Like This" items={similar} navigation={navigation} autoFocus={false} showTitles={false} />
+      </ScrollView>
 
-      <CastRow people={cast} navigation={navigation} autoFocus={false} />
-      <PosterRow title="More Like This" items={similar} navigation={navigation} autoFocus={false} showTitles={false} />
-    </ScrollView>
+      {trailersOpen ? <TrailerListOverlay trailers={remoteTrailers} onClose={() => setTrailersOpen(false)} /> : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+  },
   loading: {
     flex: 1,
     alignItems: 'center',

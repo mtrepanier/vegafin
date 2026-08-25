@@ -435,18 +435,29 @@ duplicating this JSX), action buttons, tagline, overview, then Cast and "More Li
   (`focus/useFocusGroupExpanded.ts`), just per-button instead of per-region. Every button
   (including Play) gets identical treatment, no separate filled-at-rest style for Play;
   `colors.onBackground`/`colors.background` (not a literal white/black) keep the inverted pill
-  theme-aware across this app's 8 palettes. Covers Play/Resume, Trailer (only rendered when
-  `onPlayTrailer` is passed - see next bullet), Favorite, and Watched.
+  theme-aware across this app's 8 palettes. Covers Play/Resume, Trailer, Trailers, Favorite, and
+  Watched (the two trailer buttons are separate - see below).
 - **The expanded width comes from `minWidth`/`paddingHorizontal` plus the label's own content,
   not from a fixed `width: 44` overridden with `width: undefined` when focused** - the latter
   didn't reliably override the already-computed layout on-device, leaving the button visibly
   focused (color changed correctly) but stuck circular with no room for the label to show.
-- **Trailer plays through this app's own player, not an external link.** Jellyfin items also
-  carry `RemoteTrailers` (external URLs - YouTube, etc.), but this app has no in-app way to open
-  one; `item.LocalTrailerCount` (already on the item, no extra fetch needed just to know whether
-  to show the button) instead gates a local trailer file, fetched on press
-  (`detail.ts`'s `fetchLocalTrailers`) and played through the normal `Playback` route like any
-  other item.
+- **"Trailer" and "Trailers" are two different buttons for two different kinds of trailer.**
+  `item.LocalTrailerCount` gates a movie icon "Trailer" button - a local trailer file, fetched
+  on press (`detail.ts`'s `fetchLocalTrailers`) and played through the normal `Playback` route
+  like any other item. `item.RemoteTrailers` (external links - YouTube, etc. - Jellyfin doesn't
+  host itself) gates a separate `theaters` icon "Trailers" button instead, since there's no
+  single obvious one to play and no in-app player for arbitrary web video: it opens
+  `TrailerListOverlay.tsx`, a picker listing them by name (capped at a fixed height with an
+  internal `ScrollView`, `focusItemAlignment="start"`, so an item with many trailers doesn't
+  grow the panel past the screen), and selecting one hands the raw URL to `Linking.openURL` for
+  the platform itself to handle - the first thing in this app to hand off a URL rather than
+  handle it in-app, untested on real Fire TV/Vega hardware as of writing. The overlay is plain
+  conditional JSX inside its caller (mounted/unmounted by that screen's own open state), not
+  RN's `Modal` - same manual absolute-positioned-overlay approach `PlaybackScreens.tsx`'s
+  `TrackPicker` already uses - and closes on the remote's back button via a
+  `useTVEventHandler` subscription that only exists while it's mounted, matching how
+  `PlaybackScreens.tsx` already reads a `'back'` event type off `HWEvent`. Shared with Series
+  overview below - see its own "Trailers" bullet for the one wrinkle specific to that page.
 
 #### Series overview (`SeriesOverviewScreen.tsx`)
 
@@ -509,6 +520,11 @@ Guest Stars → "More Like This".
   `destinations`.
 - **"More Like This" reuses `fetchSimilarItems`** (already generic across item types) and
   `PosterRow`'s `showTitles={false}`, the same textless card look as Movie detail's row.
+- **The "Trailers" button (see Movie detail above) sources `series.RemoteTrailers`, not the
+  focused episode's** - a show's trailer metadata generally lives on the series item itself, the
+  same reasoning `DetailHero`'s logo/genres already follow, so `FocusedEpisodeFooter.tsx` takes
+  an `onOpenTrailers` callback from `SeriesOverviewScreen.tsx` (sourced from `series`) rather
+  than reading it off whichever episode happens to be focused.
 - **The episode synopsis reserves a fixed height, not just a `numberOfLines` cap.** Without it,
   everything below (season tabs, episode row, buttons) shifted up or down as focus moved
   between episodes with different synopsis lengths - a 1-line synopsis produced a shorter block
@@ -703,9 +719,10 @@ src/
     library/                  FilteredCollection/ItemGrid/MoreHomeRow screens
     detail/                   DetailHero.tsx (shared Movie/SeriesOverview header), Movie/
                                Collection/Person detail (no standalone Episode detail - episodes
-                               open on SeriesOverview instead, see Navigation above), series/
-                               (SeasonTabs/EpisodeRow/FocusedEpisodeFooter - the rest of
-                               SeriesOverview's parts)
+                               open on SeriesOverview instead, see Navigation above),
+                               TrailerListOverlay.tsx (RemoteTrailers picker, see Movie detail
+                               above), series/ (SeasonTabs/EpisodeRow/FocusedEpisodeFooter - the
+                               rest of SeriesOverview's parts)
     playback/                 PlaybackScreen, PlaybackListScreen (KeplerVideoSurfaceView + ShakaPlayer)
     setup/                     ServerList/UserList (password + Quick Connect)/PinEntry screens
   w3cmedia/                   Vendored Shaka Player + DOM/URL/fetch polyfills - see the playback

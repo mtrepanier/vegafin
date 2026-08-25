@@ -9,6 +9,10 @@ interface Props {
   onPlay: (episode: BaseItemDto) => void;
   onToggleFavorite: (episode: BaseItemDto) => void;
   onToggleWatched: (episode: BaseItemDto) => void;
+  /** Opens the *series'* trailer picker, not the episode's - see `SeriesOverviewScreen.tsx`,
+   * which sources this from `series.RemoteTrailers` rather than the focused episode. Omitted
+   * when the series has none. */
+  onOpenTrailers?: () => void;
 }
 
 /** Play/Resume + favorite/watched for whichever episode is focused (`FocusedEpisodeFooter.kt`).
@@ -18,7 +22,7 @@ interface Props {
  * thanks to `DetailActionButtons`' own `destinations`-based `FocusGroup` - see its doc comment
  * for why that's a passive redirect rather than a proactive `hasTVPreferredFocus` claim, and why
  * a proactive claim (even delayed past mount) isn't safe to use for this instead. */
-export function FocusedEpisodeFooter({ episode, onPlay, onToggleFavorite, onToggleWatched }: Props) {
+export function FocusedEpisodeFooter({ episode, onPlay, onToggleFavorite, onToggleWatched, onOpenTrailers }: Props) {
   return (
     <View style={styles.container}>
       <DetailActionButtons
@@ -26,6 +30,7 @@ export function FocusedEpisodeFooter({ episode, onPlay, onToggleFavorite, onTogg
         onPlay={() => onPlay(episode)}
         onToggleFavorite={() => onToggleFavorite(episode)}
         onToggleWatched={() => onToggleWatched(episode)}
+        onOpenTrailers={onOpenTrailers}
         autoFocus={false}
       />
     </View>
