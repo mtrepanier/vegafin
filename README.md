@@ -60,10 +60,12 @@ Phase 0's scaffold (navigation graph, auth/session, theming) is done, and Phase 
 - **Full English/French localization** - every user-facing string in the app, defaulting to the
   device's own language with an override in Settings. See
   [Internationalization](#internationalization-englishfrench) below.
+- **An end-of-playback Next Up card**, wiring up Show Next Up/Auto Play Next Up to real
+  behavior - see [Next Up prompt](#next-up-prompt-nextupcardtsx) below.
 
-Still not implemented: the *behavior* behind Play Theme Music/Show Next Up/Auto Play Next Up,
-update checking, search, subtitle customization/delay, trickplay, skip intro/outro, live TV,
-music playback, Seerr/Jellyseerr discover, a third+ language. See [Roadmap](#roadmap).
+Still not implemented: the *behavior* behind Play Theme Music, update checking, search,
+subtitle customization/delay, trickplay, skip intro/outro, live TV, music playback,
+Seerr/Jellyseerr discover, a third+ language. See [Roadmap](#roadmap).
 
 ### Correction: playback uses KeplerVideoSurfaceView + a vendored Shaka Player, not KeplerVideoView
 
@@ -94,6 +96,47 @@ The actual, current architecture (confirmed working end-to-end on the Vega Virtu
   whole `src/w3cmedia/` tree was ported from a separate, already-working Jellyfin-for-Vega
   client rather than written from scratch, and is excluded from lint (`.eslintrc`
   `ignorePatterns`) since it's vendored/compiled, not hand-written.
+
+### Next Up prompt (`NextUpCard.tsx`)
+
+Wires up the Settings screen's `showNextUp`/`autoPlayNextUp` (previously persisted but inert)
+to an actual end-of-playback card, only on `PlaybackScreen` (a single episode the user chose
+directly) - `PlaybackListScreen` (an explicit Play All/Shuffle playlist) always auto-advances
+through its own list regardless of these settings, since that's the whole point of choosing
+Play All, a different concept from the Jellyfin "recommended next episode" feature these
+settings actually govern.
+
+- **No real chapter/credits-marker data is available to base "during end credits" on.**
+  Jellyfin's MediaSegments API has an actual `Outro` marker type for this, but it isn't
+  integrated in this app - `NEXT_UP_THRESHOLD_SEC` (`PlaybackScreens.tsx`) is a fixed
+  remaining-seconds threshold per `showNextUp` value instead (15s for "At the End of
+  Playback", 60s for "During End Credits"), not real credits detection. The card also forces
+  itself visible once the native `ended` event fires, regardless of the threshold, so a
+  same-length video with no measurable "remaining time" window still gets offered a next
+  episode instead of just cutting to black.
+- **The next episode is fetched via `getTvShowsApi().getNextUp({ seriesId, limit: 1 })`
+  (`fetchNextUpEpisode`, `playback.ts`), not by walking `IndexNumber` client-side** - the
+  server already resolves season-boundary and special-episode edge cases that a naive
+  `IndexNumber + 1` walk would get wrong. Fetched once the currently-playing item's own
+  metadata resolves (need its `SeriesId`); `null` for a movie or the last episode of a series,
+  in which case the card never shows and playback ending behaves exactly as before this
+  feature existed.
+- **`onEndedEvent` no longer decides what happens next itself - it only sets `ended` state.**
+  It's registered once per surface (`activePlayer.addEventListener('ended', ...)` inside
+  `createPlayer`), so a value it captured directly (like `nextUpItem`, fetched *after* the
+  player/listeners are already wired up) would stay stale for that listener's whole lifetime -
+  the same closure-staleness class of bug this file's `positionMsRef`/`sourceRef`/etc. mutable
+  mirrors already exist to avoid. `setEnded` is a plain state setter, which doesn't have that
+  problem, so a separate `useEffect` watching `ended`/`nextUpItem` (fresh closure every render)
+  makes the actual "exit, or let the card take over" decision instead.
+- **The Auto Play Next Up countdown owns its whole lifecycle in one `useEffect`**, not split
+  across a "start it" effect and a "fire at zero" effect - simpler than syncing two effects
+  through a shared piece of state for what's really one continuous timer.
+- **Pressing the remote's back button while the card is visible dismisses the card instead of
+  exiting playback** - the video is still playing (or already ended) behind it either way, and
+  "back cancels the pending transition, doesn't leave" matches the convention other TV players
+  use. Every other back-press behavior in this file (exiting, or - a pre-existing, unrelated
+  gap - not closing the track picker first) is unchanged.
 
 ### Focus system
 
@@ -751,8 +794,8 @@ scoped to the **service/business-logic layer**, not screens or components:
   same `subscribe`/`getSnapshot`/`init` shape as `ServerRepository`, see
   [Settings](#settings-settingsscreentsx) above), server URL scheme resolution/probing
   (`serverUrl`, `JellyfinClient`), the Jellyfin API layer (`playback` negotiation + progress
-  reporting, `homeRows` including the Continue Watching/Next Up split, `library`, `detail`
-  including `fetchLocalTrailers` and `fetchEpisodes`'s `People` field request, `images`
+  reporting + `fetchNextUpEpisode`, `homeRows` including the Continue Watching/Next Up split,
+  `library`, `detail` including `fetchLocalTrailers` and `fetchEpisodes`'s `People` field, `images`
   including the hero's series-aware poster/logo fallbacks and the side nav's avatar lookup,
   `episodeBadge`'s "E5" corner-badge labeling, `libraryIconName`'s CollectionType→icon mapping,
   the `ItemPager` pagination hook), the pure formatting helpers in `util/format.ts` (including
@@ -803,10 +846,11 @@ runner.
   (Interface/Playback/User Settings/About, reachable from the side nav's last row); skip
   forward/backward and the controls auto-hide delay are wired to real playback behavior, Show
   Clock to the Home hero, Interface Language to a full English/French localization (see
-  [Internationalization](#internationalization-englishfrench)). Still open: the behavior behind
-  Play Theme Music (theme-song audio), Show Next Up/Auto Play Next Up (an end-of-playback
-  prompt), update checking, plus search, subtitle customization, trickplay, skip intro/outro,
-  multi-server/user switching UI, PIN-lock routing, a third+ language.
+  [Internationalization](#internationalization-englishfrench)), and Show Next Up/Auto Play Next
+  Up to an actual [end-of-playback card](#next-up-prompt-nextupcardtsx). Still open: the
+  behavior behind Play Theme Music (theme-song audio), update checking, plus search, subtitle
+  customization, trickplay, skip intro/outro, multi-server/user switching UI, PIN-lock routing,
+  a third+ language.
 - **Phase 3** — Live TV guide + DVR, music playback (now playing/visualizer/lyrics),
   Jellyseerr discover integration, screensaver/slideshow, photo albums.
 
@@ -847,7 +891,8 @@ src/
                                TrailerListOverlay.tsx (RemoteTrailers picker, see Movie detail
                                above), series/ (SeasonTabs/EpisodeRow/FocusedEpisodeFooter - the
                                rest of SeriesOverview's parts)
-    playback/                 PlaybackScreen, PlaybackListScreen (KeplerVideoSurfaceView + ShakaPlayer)
+    playback/                 PlaybackScreen, PlaybackListScreen (KeplerVideoSurfaceView + ShakaPlayer),
+                               NextUpCard.tsx - see Next Up prompt above
     settings/                 SettingsScreen.tsx (real - see Settings above) plus the
                                still-Phase-2-stub HomeSettings/SubtitleSettings/
                                UserAppPreferences screens; SettingsToggle/SettingsStepper/

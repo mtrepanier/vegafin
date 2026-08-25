@@ -42,6 +42,7 @@ export const en = {
   'common.library': 'Library',
   'common.unknownServer': 'Unknown server',
   'common.trailerFallback': 'Trailer {number}',
+  'common.dismiss': 'Dismiss',
 
   // Settings screen
   'settings.title': 'Settings',
@@ -99,6 +100,8 @@ export const en = {
   'player.trackFallback': 'Track {number}',
   'player.shakaTimeout': 'Playback timed out after {seconds}s.',
   'player.streamEngineError': 'Stream engine error {code} (category {category})',
+  'player.playNow': 'Play Now',
+  'player.nextUpCountdown': 'Playing in {seconds}s',
 
   // Setup / sign-in
   'setup.addServer': 'Add a Jellyfin server',

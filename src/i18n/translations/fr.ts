@@ -37,6 +37,7 @@ export const fr: Record<TranslationKey, string> = {
   'common.library': 'Bibliothèque',
   'common.unknownServer': 'Serveur inconnu',
   'common.trailerFallback': 'Bande-annonce {number}',
+  'common.dismiss': 'Ignorer',
 
   // Settings screen
   'settings.title': 'Paramètres',
@@ -97,6 +98,8 @@ export const fr: Record<TranslationKey, string> = {
   'player.trackFallback': 'Piste {number}',
   'player.shakaTimeout': "Le délai de lecture a expiré après {seconds} s.",
   'player.streamEngineError': 'Erreur du moteur de diffusion {code} (catégorie {category})',
+  'player.playNow': 'Lire maintenant',
+  'player.nextUpCountdown': 'Lecture dans {seconds} s',
 
   // Setup / sign-in
   'setup.addServer': 'Ajouter un serveur Jellyfin',

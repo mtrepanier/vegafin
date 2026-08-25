@@ -2,6 +2,7 @@ const mockGetPostedPlaybackInfo = jest.fn();
 const mockReportPlaybackStart = jest.fn();
 const mockReportPlaybackProgress = jest.fn();
 const mockReportPlaybackStopped = jest.fn();
+const mockGetNextUp = jest.fn();
 const mockGetUri = jest.fn((url: string) => `https://server.example.com${url}`);
 
 jest.mock('../../../src/services/jellyfin/JellyfinClient', () => ({
@@ -24,11 +25,16 @@ jest.mock('@jellyfin/sdk/lib/utils/api/playstate-api', () => ({
   }),
 }));
 
+jest.mock('@jellyfin/sdk/lib/utils/api/tv-shows-api', () => ({
+  getTvShowsApi: () => ({ getNextUp: mockGetNextUp }),
+}));
+
 import {
   negotiatePlayback,
   reportPlaybackStart as reportStart,
   reportPlaybackProgress as reportProgress,
   reportPlaybackStopped as reportStopped,
+  fetchNextUpEpisode,
 } from '../../../src/services/jellyfin/playback';
 import { PlayMethod } from '@jellyfin/sdk/lib/generated-client/models/play-method';
 
@@ -194,5 +200,33 @@ describe('reportPlaybackStopped', () => {
         PositionTicks: 90_000_000,
       },
     });
+  });
+});
+
+describe('fetchNextUpEpisode', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns the first item, scoped to the given series', async () => {
+    mockGetNextUp.mockResolvedValue({ data: { Items: [{ Id: 'ep-2', IndexNumber: 2 }] } });
+
+    const result = await fetchNextUpEpisode('user-1', 'series-1');
+
+    expect(result).toEqual({ Id: 'ep-2', IndexNumber: 2 });
+    expect(mockGetNextUp).toHaveBeenCalledWith({
+      userId: 'user-1',
+      seriesId: 'series-1',
+      limit: 1,
+      enableUserData: true,
+    });
+  });
+
+  it('returns null when the server has nothing queued (e.g. the last episode of a series)', async () => {
+    mockGetNextUp.mockResolvedValue({ data: { Items: [] } });
+    expect(await fetchNextUpEpisode('user-1', 'series-1')).toBeNull();
+  });
+
+  it('returns null when Items is missing entirely', async () => {
+    mockGetNextUp.mockResolvedValue({ data: {} });
+    expect(await fetchNextUpEpisode('user-1', 'series-1')).toBeNull();
   });
 });
