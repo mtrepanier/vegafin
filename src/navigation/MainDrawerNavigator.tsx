@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, Text, View, type PressableStateCallbackType } from 'react-native';
 import { createDrawerNavigator, type DrawerContentComponentProps } from '@amazon-devices/react-navigation__drawer';
+import type { NativeStackNavigationProp } from '@amazon-devices/react-navigation__native-stack';
 import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
 import { getUserApi } from '@jellyfin/sdk/lib/utils/api/user-api';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
@@ -30,7 +31,7 @@ import { userImageUrl } from '../services/jellyfin/images';
 import { libraryIconName } from '../services/jellyfin/libraryIcons';
 import { ScreenBackdropContext } from './screenBackdropContext';
 import { ScreenBackdrop } from '../screens/ScreenBackdrop';
-import type { DrawerParamList } from './types';
+import type { DrawerParamList, RootStackParamList } from './types';
 
 const Drawer = createDrawerNavigator<DrawerParamList>();
 
@@ -196,6 +197,18 @@ function DrawerContent({ navigation, state }: DrawerContentComponentProps) {
               ))}
             </View>
           ) : null}
+
+          {/* Last row, always - Settings lives on RootStackParamList (a bare full-screen push,
+              not drawer chrome, matching every other Settings-ish screen), so this navigates via
+              the drawer's *parent* stack navigator rather than the drawer's own navigate(). */}
+          <DrawerRow
+            icon="settings"
+            label="Settings"
+            expanded={expanded}
+            onFocus={reveal}
+            onBlur={release}
+            onPress={() => navigation.getParent<NativeStackNavigationProp<RootStackParamList>>()?.navigate('Settings')}
+          />
         </ScrollView>
       </FocusGroup>
     </View>

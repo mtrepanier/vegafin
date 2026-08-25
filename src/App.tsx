@@ -7,6 +7,7 @@ import {
   useCurrentUser,
   useServerRepositoryReady,
 } from './services/storage/ServerRepositoryContext';
+import { AppSettingsProvider } from './services/storage/AppSettingsContext';
 import { RootNavigator } from './navigation/RootNavigator';
 import { SetupNavigator } from './navigation/SetupNavigator';
 
@@ -54,9 +55,11 @@ function Root() {
 export function App() {
   return (
     <ThemeProvider>
-      <ServerRepositoryProvider>
-        <Root />
-      </ServerRepositoryProvider>
+      <AppSettingsProvider>
+        <ServerRepositoryProvider>
+          <Root />
+        </ServerRepositoryProvider>
+      </AppSettingsProvider>
     </ThemeProvider>
   );
 }
