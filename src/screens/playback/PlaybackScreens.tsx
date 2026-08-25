@@ -5,7 +5,9 @@ import { useKeplerAppStateManager, useTVEventHandler, type HWEvent } from '@amaz
 import { KeplerVideoSurfaceView, VideoPlayer } from '@amazon-devices/react-native-w3cmedia';
 import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
 import { MediaStreamType } from '@jellyfin/sdk/lib/generated-client/models/media-stream-type';
+import { BaseItemKind } from '@jellyfin/sdk/lib/generated-client/models/base-item-kind';
 import type { MediaStream } from '@jellyfin/sdk/lib/generated-client/models/media-stream';
+import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import { useTheme } from '../../theme/ThemeContext';
 import { useCurrentUser } from '../../services/storage/ServerRepositoryContext';
 import { useAppSettings } from '../../services/storage/AppSettingsContext';
@@ -16,10 +18,12 @@ import {
   reportPlaybackProgress,
   reportPlaybackStart,
   reportPlaybackStopped,
+  fetchNextUpEpisode,
   type PlaybackSource,
 } from '../../services/jellyfin/playback';
 import { unloadPlayer } from '../../w3cmedia/playerLifecycle';
 import { ShakaPlayer } from '../../w3cmedia/shakaplayer/ShakaPlayer';
+import { NextUpCard } from './NextUpCard';
 import type { RootStackParamList } from '../../navigation/types';
 
 const PROGRESS_REPORT_INTERVAL_MS = 5000;
@@ -32,6 +36,17 @@ const SHAKA_LOAD_TIMEOUT_MS = 20000;
 // from AppSettings (Settings screen's Playback section) instead, with defaultAppSettings()
 // carrying forward these exact same numbers so nobody's actual playback behavior changed the
 // day that setting screen was added.
+
+/** How many seconds of remaining playback trigger the Next Up card for each `showNextUp`
+ * setting. There's no real chapter/credits-marker data available (Jellyfin's MediaSegments API,
+ * which has an actual `Outro` marker type, isn't integrated in this app) - "duringCredits" is a
+ * fixed, longer window standing in for real credits detection, not literal credits timing. */
+const NEXT_UP_THRESHOLD_SEC: Record<'atEnd' | 'duringCredits', number> = {
+  atEnd: 15,
+  duringCredits: 60,
+};
+/** Seconds the Next Up card counts down before auto-advancing, when Auto Play Next Up is on. */
+const NEXT_UP_AUTO_PLAY_COUNTDOWN_SEC = 10;
 
 /** negotiatePlayback always transcodes to HLS, so this is effectively always true - kept as an
  * explicit check (rather than assumed) for parity with AmbientFlare/astra-tv, a separate
@@ -58,6 +73,13 @@ interface PlaybackBodyProps {
   initialPositionMs: number;
   onEnded: () => void;
   onExit: () => void;
+  /** Opts into the end-of-playback "Next Up" card - only `PlaybackScreen` (a single episode the
+   * user chose directly) passes this; `PlaybackListScreen` (an explicit Play All/Shuffle
+   * playlist) always auto-advances through its own list regardless of the Next Up settings,
+   * which are specifically about the Jellyfin "recommended next episode" feature, a different
+   * concept from a playlist the user already committed to watching in full. */
+  enableNextUp?: boolean;
+  onPlayNextUp?: (item: BaseItemDto) => void;
 }
 
 /**
@@ -73,15 +95,16 @@ interface PlaybackBodyProps {
  * handling below, is confirmed working end-to-end against AmbientFlare/astra-tv, a separate
  * Jellyfin-for-Vega client tested on real Fire TV hardware.
  */
-function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBodyProps) {
+function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit, enableNextUp, onPlayNextUp }: PlaybackBodyProps) {
   const { colors } = useTheme();
   const currentUser = useCurrentUser();
   const userId = currentUser?.user.id;
   const keplerAppStateManager = useKeplerAppStateManager();
-  const { hideControlsAfterSec, skipForwardSec, skipBackwardSec } = useAppSettings();
+  const { hideControlsAfterSec, skipForwardSec, skipBackwardSec, showNextUp, autoPlayNextUp } = useAppSettings();
   const t = useT();
 
-  const [title, setTitle] = useState<string | null>(null);
+  const [item, setItem] = useState<BaseItemDto | null>(null);
+  const title = item?.Name ?? null;
   const [ready, setReady] = useState(false);
   const [source, setSource] = useState<PlaybackSource | null>(null);
   const [error, setError] = useState(false);
@@ -152,8 +175,76 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
     if (!userId) {
       return;
     }
-    fetchItem(userId, itemId).then((item) => setTitle(item.Name ?? null));
+    fetchItem(userId, itemId).then(setItem);
   }, [userId, itemId]);
+
+  // Fetched once the current item's own metadata resolves (need its SeriesId), scoped to just
+  // this series via fetchNextUpEpisode - not the general cross-show Next Up homeRows.ts uses for
+  // the Home row. Never fetched for PlaybackListScreen (enableNextUp omitted there) or for a
+  // movie/anything without a SeriesId - Next Up is an episode-to-episode concept.
+  const [nextUpItem, setNextUpItem] = useState<BaseItemDto | null>(null);
+  useEffect(() => {
+    setNextUpItem(null);
+    if (!enableNextUp || !userId || !item || item.Type !== BaseItemKind.Episode || !item.SeriesId) {
+      return;
+    }
+    let cancelled = false;
+    fetchNextUpEpisode(userId, item.SeriesId).then((next) => {
+      if (!cancelled) setNextUpItem(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [enableNextUp, userId, item]);
+
+  // Reset whenever a genuinely new item starts (see createPlayer's own reset block) - a
+  // previous episode's dismissal/countdown state shouldn't carry over to the next one.
+  const [nextUpDismissed, setNextUpDismissed] = useState(false);
+  const [nextUpCountdown, setNextUpCountdown] = useState<number | null>(null);
+  const [ended, setEnded] = useState(false);
+
+  const nextUpThresholdSec = showNextUp === 'never' ? null : NEXT_UP_THRESHOLD_SEC[showNextUp];
+  const remainingSec = durationSec > 0 ? durationSec - positionSec : Infinity;
+  const nextUpVisible =
+    !!nextUpItem && !nextUpDismissed && nextUpThresholdSec != null && (ended || remainingSec <= nextUpThresholdSec);
+
+  const playNextUp = useCallback(() => {
+    if (nextUpItem) {
+      onPlayNextUp?.(nextUpItem);
+    }
+  }, [nextUpItem, onPlayNextUp]);
+
+  // Auto-play countdown - only runs once the card is actually visible, and owns its own full
+  // lifecycle (start/tick/fire) in one effect rather than splitting "start countdown" and "fire
+  // at zero" across two, so there's no separate render/effect round-trip for the last tick.
+  useEffect(() => {
+    if (!nextUpVisible || !autoPlayNextUp) {
+      setNextUpCountdown(null);
+      return;
+    }
+    let remaining = NEXT_UP_AUTO_PLAY_COUNTDOWN_SEC;
+    setNextUpCountdown(remaining);
+    const interval = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        clearInterval(interval);
+        playNextUp();
+        return;
+      }
+      setNextUpCountdown(remaining);
+    }, 1000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nextUpVisible, autoPlayNextUp]);
+
+  // The true fallback once playback actually ends: only exits when there's nothing to offer
+  // (a movie, the last episode of a series, or Next Up disabled) - otherwise the card (already
+  // forced visible via `ended` above) is what decides what happens next.
+  useEffect(() => {
+    if (ended && !nextUpItem) {
+      onEnded();
+    }
+  }, [ended, nextUpItem, onEnded]);
 
   const reportProgress = useCallback(() => {
     const src = sourceRef.current;
@@ -306,6 +397,8 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
       setPaused(true);
       setPositionSec(initialPositionMs / 1000);
       setDurationSec(0);
+      setEnded(false);
+      setNextUpDismissed(false);
       // The generation number is shown so a re-fired onSurfaceViewCreated (KeplerVideoSurfaceView
       // isn't guaranteed to fire it only once) is visible directly on screen - logs are
       // unreliable here (systemd-journald rate-limits and silently drops bursts).
@@ -371,7 +464,11 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
         if (isCurrentPlayer()) setStatusText(null);
       };
       const onEndedEvent = () => {
-        if (isCurrentPlayer()) onEnded();
+        // Doesn't call onEnded() directly - that decision (exit vs. let the Next Up card take
+        // over) lives in the effect watching `ended`/`nextUpItem` below, since setEnded is a
+        // stable setState setter and doesn't suffer the stale-closure risk a captured onEnded/
+        // nextUpItem value would inside a listener that's only (re-)registered once per surface.
+        if (isCurrentPlayer()) setEnded(true);
       };
       const onError = () => {
         if (!isCurrentPlayer()) return;
@@ -402,7 +499,6 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
     [
       initialPositionMs,
       keplerAppStateManager,
-      onEnded,
       reportProgress,
       unloadAdaptivePlayer,
       clearControlsHideTimer,
@@ -480,6 +576,53 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
     [itemId, unloadAdaptivePlayer, clearControlsHideTimer],
   );
 
+  // Belt-and-suspenders unmount cleanup: onSurfaceViewDestroyed is native-driven and isn't
+  // guaranteed to fire promptly - or, confirmed on-device, reliably at all - when this component
+  // itself unmounts (navigating away with the back button, or Next Up's key-based remount
+  // swapping in the next episode). Without this, the outgoing player kept playing and its audio
+  // mixed with whatever came next. No setState calls here - the component is already gone by the
+  // time this runs - just stopping the actual native player and telling the server playback
+  // stopped at the last known position, the same imperative work onSurfaceViewDestroyed already
+  // does; harmless if both end up running, since each checks playerRef.current for itself and
+  // whichever runs second finds it already null.
+  useEffect(() => {
+    return () => {
+      const activePlayer = playerRef.current;
+      if (!activePlayer) {
+        return;
+      }
+      playerRef.current = null;
+      playbackGenerationRef.current += 1;
+      if (progressTimerRef.current) {
+        clearInterval(progressTimerRef.current);
+        progressTimerRef.current = null;
+      }
+      const src = sourceRef.current;
+      if (src) {
+        reportPlaybackStopped({
+          itemId,
+          mediaSourceId: src.mediaSourceId,
+          playSessionId: src.playSessionId,
+          positionMs: positionMsRef.current,
+        }).catch(() => {});
+      }
+      try {
+        activePlayer.pause();
+        if (surfaceHandleRef.current) {
+          activePlayer.clearSurfaceHandle(surfaceHandleRef.current);
+        }
+      } catch {
+        // Best-effort - the screen is already gone either way.
+      }
+      activePlayer.deinitialize().catch(() => {});
+    };
+    // Deliberately empty - this should run exactly once, on unmount, reading whatever's in the
+    // refs at that moment rather than re-running mid-lifecycle the way a dependency-driven
+    // effect would. itemId is effectively constant per mount anyway (a new item means a new
+    // `key`, hence a whole new PlaybackBody instance, not a re-render of this one).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Prefers fastSeek over the plain currentTime setter when available, matching
   // AmbientFlare/astra-tv (a separate Jellyfin-for-Vega client tested on real Fire TV
   // hardware) - also reports the new position immediately rather than waiting for the next
@@ -522,7 +665,14 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
 
       switch (type) {
         case 'back':
-          onExit();
+          // Dismiss the Next Up card instead of exiting playback, matching the "back cancels
+          // the upcoming transition" convention other TV players use - the video itself is
+          // still playing (or already ended) behind it either way.
+          if (nextUpVisible) {
+            setNextUpDismissed(true);
+          } else {
+            onExit();
+          }
           break;
         case 'play':
         case 'pause':
@@ -552,7 +702,7 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
           break;
       }
     },
-    [onExit, seekBy, revealControls, pickerOpen, skipForwardSec, skipBackwardSec],
+    [onExit, seekBy, revealControls, pickerOpen, skipForwardSec, skipBackwardSec, nextUpVisible],
   );
   useTVEventHandler(handleTVEvent);
 
@@ -678,6 +828,15 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit }: PlaybackBo
           onClose={() => setPickerOpen(false)}
         />
       ) : null}
+
+      {nextUpVisible && nextUpItem ? (
+        <NextUpCard
+          item={nextUpItem}
+          countdownSec={nextUpCountdown}
+          onPlay={playNextUp}
+          onDismiss={() => setNextUpDismissed(true)}
+        />
+      ) : null}
     </View>
   );
 }
@@ -757,14 +916,26 @@ function PickerRow({ label, selected, onPress }: { label: string; selected: bool
 export function PlaybackScreen() {
   const route = useRoute<RouteProp<RootStackParamList, 'Playback'>>();
   const navigation = useNavigation();
-  const { itemId, positionMs } = route.params;
+  // Local state, seeded once from route.params rather than read directly - the Next Up card
+  // transitions to a new episode by updating these and remounting PlaybackBody via `key`
+  // (same trick PlaybackListScreen's own currentIndex/goNext already uses), not by navigating.
+  const [itemId, setItemId] = useState(route.params.itemId);
+  const [positionMs, setPositionMs] = useState(route.params.positionMs);
 
   return (
     <PlaybackBody
+      key={itemId}
       itemId={itemId}
       initialPositionMs={positionMs}
       onEnded={() => navigation.goBack()}
       onExit={() => navigation.goBack()}
+      enableNextUp
+      onPlayNextUp={(next) => {
+        if (next.Id) {
+          setItemId(next.Id);
+          setPositionMs(0);
+        }
+      }}
     />
   );
 }

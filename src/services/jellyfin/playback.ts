@@ -1,5 +1,6 @@
 import { getMediaInfoApi } from '@jellyfin/sdk/lib/utils/api/media-info-api';
 import { getPlaystateApi } from '@jellyfin/sdk/lib/utils/api/playstate-api';
+import { getTvShowsApi } from '@jellyfin/sdk/lib/utils/api/tv-shows-api';
 import { DlnaProfileType } from '@jellyfin/sdk/lib/generated-client/models/dlna-profile-type';
 import { EncodingContext } from '@jellyfin/sdk/lib/generated-client/models/encoding-context';
 import { MediaStreamProtocol } from '@jellyfin/sdk/lib/generated-client/models/media-stream-protocol';
@@ -7,6 +8,7 @@ import { SubtitleDeliveryMethod } from '@jellyfin/sdk/lib/generated-client/model
 import { PlayMethod } from '@jellyfin/sdk/lib/generated-client/models/play-method';
 import type { DeviceProfile } from '@jellyfin/sdk/lib/generated-client/models/device-profile';
 import type { MediaStream } from '@jellyfin/sdk/lib/generated-client/models/media-stream';
+import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import { jellyfinClient } from './JellyfinClient';
 import { msToTicks } from '../../util/format';
 
@@ -132,6 +134,22 @@ export async function negotiatePlayback(
   }
 
   throw new Error('Server did not return a playable stream URL');
+}
+
+/** The episode Jellyfin's own "Next Up" would recommend after this series' currently-playing
+ * episode, scoped to just that one series (`seriesId`, not the general cross-show "Next Up"
+ * `homeRows.ts`'s `fetchNextUpRow` uses for the Home row) - lets the server resolve
+ * season-boundary/special-episode edge cases rather than this app walking `IndexNumber`
+ * itself. Used by `PlaybackScreens.tsx`'s end-of-playback Next Up prompt; `null` when there
+ * isn't one (last episode of a series, or the server has nothing queued). */
+export async function fetchNextUpEpisode(userId: string, seriesId: string): Promise<BaseItemDto | null> {
+  const { data } = await getTvShowsApi(jellyfinClient.api).getNextUp({
+    userId,
+    seriesId,
+    limit: 1,
+    enableUserData: true,
+  });
+  return data.Items?.[0] ?? null;
 }
 
 export interface ProgressReportInfo {
