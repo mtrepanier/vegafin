@@ -1340,6 +1340,66 @@ PR. It does **not** run `build:debug`/`build:release` — those need the Vega SD
 (Amazon developer account, `vega`/`vtbuild`), which isn't available on a public GitHub-hosted
 runner.
 
+## Versioning & releases
+
+Two separate fields track the app's version and don't sync themselves: `package.json`'s
+`"version"` and `manifest.toml`'s `[package] version` — the latter is the one that actually
+ships in the `.vpkg` and shows in the Amazon Appstore listing. `manifest.toml` also has a
+`build_number` (currently unset, defaulting to `0` — the `WARNING: build_number is 0` line
+every build prints), a separate integer meant to distinguish individual uploaded builds within
+the same version; it's a manual/local concern (e.g. `vega build --build-number N`), not
+something the automation below touches.
+
+**`prepare-release.yml` + `tag-release.yml`** (`.github/workflows/`) automate keeping
+`package.json`/`package-lock.json`/`manifest.toml` in sync and tying each release to a GitHub
+Release, in two steps rather than one:
+
+1. Run **Prepare Release** manually (Actions tab → pick `patch`/`minor`/`major`). It bumps the
+   version in all three files and opens a PR (`release/vX.Y.Z` → `main`) - it does **not** push
+   to `main` directly. That's not just caution: `.github/rulesets/protect-main.json` requires
+   signed commits on `main` (`required_signatures`) plus a passing `test` status check, and a
+   plain `git push` from a runner produces an unsigned commit the ruleset would reject outright.
+   Merging a PR through GitHub's own merge button/API produces a GitHub-signed merge commit
+   automatically, which is what actually satisfies that rule - pushing straight to `main` was
+   never a viable option here, not a first choice that got second-guessed.
+2. Once that PR is reviewed and merged, **Tag Release** triggers automatically (on any
+   `package.json` change landing on `main`), tags `vX.Y.Z`, and publishes a GitHub Release with
+   auto-generated notes (from merged PR titles since the last release - this project's existing
+   one-PR-per-feature history already reads well that way with no extra changelog upkeep). It
+   checks whether that version is already tagged first, so it's safe to trigger on *any*
+   `package.json` change on `main`, not just ones the bump PR itself caused, without ever
+   double-tagging. Pushing a *tag* isn't subject to the branch ruleset at all - that only
+   targets the `main` branch ref, not tag refs - so this step can push directly with the
+   default `GITHUB_TOKEN`.
+3. The same **Tag Release** run also copies that Release's own generated notes into
+   [CHANGELOG.md](CHANGELOG.md) (newest entry on top, existing ones kept below it) and opens a
+   *second* PR for that - one source of truth (the Release notes), just also mirrored into a
+   repo-tracked file for browsing without leaving the source tree, and for pasting straight into
+   an Amazon Appstore "what's new" field at submission time. This PR needs a merge too, for the
+   same `required_signatures` reason the version-bump PR does - CHANGELOG.md isn't hand-maintained
+   at any point in this flow, so there's nothing to keep in sync by hand, only a PR to approve.
+
+**This only produces a version bump + a GitHub Release (tag, changelog) + a CHANGELOG.md
+entry.** It does not build a `.vpkg` or touch the Amazon Appstore - as noted above, the Vega SDK
+toolchain isn't available on a GitHub-hosted runner, so building the Release binary and
+submitting it through the Amazon Developer Console both stay manual, local steps after the
+version bump lands. Deliberately not a self-hosted-runner-based GitHub Action either, even
+though that would technically be possible - the actual store submission still isn't scriptable
+(no Amazon API for it that I've found), so automating just the build step would trade "run one
+npm command" for maintaining a self-hosted runner, without actually reaching a hands-off release.
+
+**`npm run release:build [tag]`** (`scripts/release-build.sh`) is the guardrail for that manual
+build step: rather than trusting whoever's building it to remember to check out the right tag
+first, it does that itself - checks out the given tag (or the latest one, if none is given),
+refuses to run at all with a dirty working tree (about to switch refs; would either lose or
+silently carry over local changes into the build), verifies `package.json`/`manifest.toml`'s
+versions actually agree with the tag before building anything (catches a tag created outside
+`tag-release.yml`, or a release workflow that partially failed), then runs `npm ci` + the real
+`build:release`. Leaves the repo in detached HEAD at the built tag on purpose when it's done -
+printed at the end, along with how to get back to a branch - rather than switching back
+automatically and risking whoever's about to upload the `.vpkg` believing they built one commit
+when they actually built another.
+
 ## Roadmap
 
 - **Phase 1** (done, verified on the Vega Virtual Device) — Home page ("My Media": a

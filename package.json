@@ -15,7 +15,8 @@
     "build:release": "react-native build-vega --build-type Release",
     "build:debug": "react-native build-vega --build-type Debug",
     "build": "npm-run-all build:release",
-    "release": "npm-run-all lint typecheck test build"
+    "release": "npm-run-all lint typecheck test build",
+    "release:build": "scripts/release-build.sh"
   },
   "dependencies": {
     "@amazon-devices/kepler-file-system": "~0.0.7",

@@ -1,0 +1,107 @@
+name: Tag Release
+
+# Runs whenever package.json changes on main - which in practice means a Prepare Release PR
+# (prepare-release.yml) just merged. Tags the new version and publishes a GitHub Release with
+# auto-generated notes (from merged PR titles since the last release), but only if that version
+# isn't already tagged - so this is safe to trigger on any package.json change on main, not just
+# ones this workflow itself caused, without ever double-tagging the same version.
+#
+# Pushing a tag isn't subject to .github/rulesets/protect-main.json's required_signatures rule -
+# that ruleset targets the main branch ref specifically, not tag refs - so this can push directly
+# with the default GITHUB_TOKEN, unlike prepare-release.yml's version-bump commit.
+#
+# Also opens a second PR updating CHANGELOG.md with that same release's generated notes - a PR
+# for the same reason as prepare-release.yml's version bump: this job can push a *tag* directly,
+# but pushing the changelog *commit* to main is a branch-ref change and hits the same
+# required_signatures wall a plain runner push can't satisfy on its own.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - package.json
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  tag-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check whether this version is already tagged
+        id: check
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "already_tagged=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "already_tagged=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Tag and create GitHub Release
+        if: steps.check.outputs.already_tagged == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
+          gh release create "v$VERSION" --title "v$VERSION" --generate-notes
+
+      # Reuses the Release's own generated notes rather than recomputing anything - one source
+      # of truth for "what changed," just copied into a repo-tracked file too, for browsing
+      # without leaving the source tree and for pasting into an Amazon Appstore "what's new"
+      # field at submission time.
+      - name: Open CHANGELOG.md update PR
+        if: steps.check.outputs.already_tagged == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          NOTES=$(gh release view "v$VERSION" --json body -q .body)
+          DATE=$(date -u +%Y-%m-%d)
+
+          # Keeps whatever version entries (lines from the first "## [" heading onward) already
+          # existed, discarding only the regenerated header above them - so this works the same
+          # whether CHANGELOG.md already has a dozen releases in it or doesn't exist yet.
+          EXISTING=""
+          if [ -f CHANGELOG.md ]; then
+            EXISTING=$(awk '/^## \[/{found=1} found' CHANGELOG.md)
+          fi
+
+          {
+            echo "# Changelog"
+            echo
+            echo "All notable changes to VegaFin are tracked here, generated automatically from"
+            echo "merged pull requests at release time - see"
+            echo "[DEVELOPER.md](DEVELOPER.md#versioning--releases) for how."
+            echo
+            echo "## [v$VERSION] - $DATE"
+            echo
+            echo "$NOTES"
+            if [ -n "$EXISTING" ]; then
+              echo
+              echo "$EXISTING"
+            fi
+          } > CHANGELOG.md
+
+          BRANCH="changelog/v$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add CHANGELOG.md
+          git commit -m "Update CHANGELOG.md for v$VERSION"
+          git push origin "$BRANCH"
+          gh pr create --base main --head "$BRANCH" \
+            --title "Update CHANGELOG.md for v$VERSION" \
+            --body "Copies the v$VERSION GitHub Release's own generated notes into CHANGELOG.md."
