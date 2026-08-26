@@ -151,6 +151,15 @@ export const fr: Record<TranslationKey, string> = {
   'home.nextUp': 'À suivre',
   'home.latestLibrary': 'Récemment ajoutés : {libraryName}',
 
+  'search.placeholder': 'Rechercher des films, séries, personnes...',
+  'search.searching': 'Recherche en cours...',
+  'search.noResults': 'Aucun résultat pour « {query} »',
+  'search.section.movies': 'Films',
+  'search.section.series': 'Séries',
+  'search.section.episodes': 'Épisodes',
+  'search.section.collections': 'Collections',
+  'search.section.people': 'Personnes',
+
   // Placeholder screens not built yet (Phase 2/3) - see StubScreen.tsx
   'stub.phase1': 'Phase 1',
   'stub.phase2': 'Phase 2',

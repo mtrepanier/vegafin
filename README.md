@@ -76,8 +76,10 @@ Phase 0's scaffold (navigation graph, auth/session, theming) is done, and Phase 
   unwatched-episode-count corner badge on every card list that can show one - see
   [Library sort picker](#library-sort-picker-libraryscreenstsx) and
   [Series unwatched-episode badge](#series-unwatched-episode-badge-seriesbadgets) below.
+- **Search** - Movies/TV Shows/Episodes/Collections/People, each as its own labeled row - see
+  [Search](#search-searchscreentsx-searchts) below.
 
-Still not implemented: the *behavior* behind Play Theme Music, update checking, search,
+Still not implemented: the *behavior* behind Play Theme Music, update checking,
 subtitle customization/delay, trickplay, live TV, music playback, Seerr/Jellyseerr discover, a
 third+ language. See [Roadmap](#roadmap).
 
@@ -833,6 +835,48 @@ and fully-watched series already got.
   `CastRow.tsx` weren't, since they render individual episodes and cast members respectively,
   neither of which this badge applies to.
 
+### Search (`SearchScreen.tsx`, `search.ts`)
+
+Replaces the earlier stub. Results render as up to five separate labeled rows (Movies, TV
+Shows, Episodes, Collections, People) rather than one flat mixed list - a direct port of
+Wholphin's `SearchPage.kt` approach, since a flat list mixing a movie poster next to an episode
+still next to a person's headshot read far worse than grouping does.
+
+- **One `getItems({ searchTerm, includeItemTypes: [kind], recursive: true, limit: 20 })` call
+  per type, fired in parallel (`fetchSearchResults`, `services/jellyfin/search.ts`)** - not the
+  SDK's separate dedicated `SearchApi.getSearchHints()` endpoint, which exists but which
+  Wholphin's own reference implementation doesn't use either; the regular Items API's
+  `searchTerm` param is the same call shape every other query in this app already goes through
+  (`library.ts`'s `fetchLibraryPage`), so this reuses that convention instead of introducing a
+  second, differently-shaped API surface for just this one screen.
+- **Scoped to the five types this app actually has a detail page/navigation target for** (see
+  `navigateToItem.ts`) - Music/Audio/MusicAlbum etc. exist in `BaseItemKind` and could be
+  searched too, but music playback isn't built (Phase 3), so a result there would be a dead
+  end. No custom relevance re-ranking of results - the server's own default ordering is used
+  as-is, matching this project's habit of trimming a first pass down to what's actually needed
+  rather than porting Wholphin's fuller `SearchRelevance` scoring utility up front.
+- **750ms debounce** (`SEARCH_DEBOUNCE_MS`), matching Wholphin's own `SearchPage.kt`/
+  `SearchForDialog.kt` timing - long enough that a few keystrokes in a row only fire one
+  request, short enough that results still feel responsive. A plain `useEffect`+`setTimeout`+
+  `cancelled` guard, the same shape every other async-fetch effect in this codebase already
+  uses - no separate debounce hook, since this is the only screen that needs one.
+  Un-paginated - each row is capped at 20 results with no "view more" expansion, unlike the
+  library grids' own infinite-scroll `ItemPager`; a search results *overview* doesn't need full
+  pagination the way a dedicated library browse does, and this can be revisited if it turns out
+  to matter in practice.
+- **The query `TextInput` claims `hasTVPreferredFocus` directly, unlike the sign-in forms'
+  own `TextInput`s** (`ServerListScreen.tsx`/`UserListScreen.tsx`, which give initial focus to
+  a button below the field instead). Deliberate: a search screen's whole point is typing
+  immediately, where landing in a text field by default is exactly what's wanted, unlike a
+  server-connect form where that's more of a footgun. Otherwise follows the exact same plain
+  `<TextInput>` convention those forms already established (no custom TV-remote keyboard
+  gating à la Wholphin's `EditTextBox`/`SearchEditTextBox` - RN-TV's default focus-triggers-the-
+  system-keyboard behavior is already relied on elsewhere in this app).
+- **Each result row passes `autoFocus={false}`** (`PosterRow`'s own prop for "don't claim
+  initial focus here") - the query field is the screen's one authoritative initial focus
+  target, the same reasoning every other screen with a more specific initial-focus need already
+  follows.
+
 ### Settings (`SettingsScreen.tsx`)
 
 Phase 2's first slice: a flat, single-screen list of sections (Interface, Playback, User
@@ -1118,8 +1162,8 @@ scoped to the **service/business-logic layer**, not screens or components:
   `fetchNextUpEpisode` + `fetchMediaSegments`, `homeRows` including the Continue Watching/Next Up split,
   `library` including `resolveLibrarySort`'s stored-value validation, `libraryItemKinds`'s
   CollectionType→item-type mapping, `sortLibrariesByType`'s side-nav ordering, and
-  `ServerRepository.setLibrarySort`'s per-user persistence, `detail` including
-  `fetchLocalTrailers` and `fetchEpisodes`'s `People` field, `images`
+  `ServerRepository.setLibrarySort`'s per-user persistence, `search`'s per-type parallel
+  queries, `detail` including `fetchLocalTrailers` and `fetchEpisodes`'s `People` field, `images`
   including the hero's series-aware poster/logo fallbacks and the side nav's avatar lookup,
   `episodeBadge`'s "E5" corner-badge labeling, `seriesBadge`'s unwatched-episode-count badge,
   `libraryIconName`'s CollectionType→icon mapping,
@@ -1177,9 +1221,10 @@ runner.
   reusing the pre-auth setup screens, Skip Intro/Skip Outro are wired to a
   [server-driven skip button](#skip-introoutro-skipsegmentbuttontsx), and the remote's
   dedicated FF/RW buttons now
-  [ramp into a faster seek the longer they're held](#hold-to-fast-seek-on-the-remotes-ffrw-buttons).
-  Still open: the behavior behind Play Theme Music (theme-song audio), update checking, plus
-  search, subtitle customization, trickplay, PIN-lock routing on app-launch session restore
+  [ramp into a faster seek the longer they're held](#hold-to-fast-seek-on-the-remotes-ffrw-buttons),
+  and [Search](#search-searchscreentsx-searchts) now returns real, grouped results instead of a
+  stub. Still open: the behavior behind Play Theme Music (theme-song audio), update checking,
+  subtitle customization, trickplay, PIN-lock routing on app-launch session restore
   specifically, a third+ language.
 - **Phase 3** — Live TV guide + DVR, music playback (now playing/visualizer/lyrics),
   Jellyseerr discover integration, screensaver/slideshow, photo albums.
@@ -1203,7 +1248,7 @@ src/
   services/
     jellyfin/                 JellyfinClient.ts (@jellyfin/sdk wrapper), images.ts, ItemPager.ts,
                                homeRows.ts, library.ts, detail.ts, playback.ts, libraryIcons.ts,
-                               episodeBadge.ts, seriesBadge.ts
+                               episodeBadge.ts, seriesBadge.ts, search.ts
     storage/ServerRepository.ts   Session/auth (mirrors data/ServerRepository.kt),
                                AppSettingsRepository.ts/AppSettingsContext.tsx (device-local app
                                preferences - see Settings above)
@@ -1213,7 +1258,7 @@ src/
   screens/
     HomeScreen.tsx, HomeHero.tsx, ScreenBackdrop.tsx (full-bleed backdrop layer, shared with
     MovieDetail/SeriesOverview), homeHeroLayout.ts (shared hero/backdrop sizing),
-    FavoritesScreen.tsx, SeriesOverviewScreen.tsx, MediaItemScreen.tsx
+    FavoritesScreen.tsx, SearchScreen.tsx, SeriesOverviewScreen.tsx, MediaItemScreen.tsx
     library/                  FilteredCollection/ItemGrid/MoreHomeRow screens
     detail/                   DetailHero.tsx (shared Movie/SeriesOverview header), Movie/
                                Collection/Person detail (no standalone Episode detail - episodes
