@@ -1350,6 +1350,13 @@ every build prints), a separate integer meant to distinguish individual uploaded
 the same version; it's a manual/local concern (e.g. `vega build --build-number N`), not
 something the automation below touches.
 
+**One-time repo setting required before either workflow works**: Settings → Actions → General →
+Workflow permissions → check "Allow GitHub Actions to create and approve pull requests." Off by
+default on most repos; without it, both `gh pr create` calls below fail with `GraphQL: GitHub
+Actions is not permitted to create or approve pull requests`, after already having pushed their
+branch/tag/Release - confirmed on-device (so to speak) the first time this ran, leaving an
+orphaned branch behind that needed manual cleanup.
+
 **`prepare-release.yml` + `tag-release.yml`** (`.github/workflows/`) automate keeping
 `package.json`/`package-lock.json`/`manifest.toml` in sync and tying each release to a GitHub
 Release, in two steps rather than one:
@@ -1366,11 +1373,13 @@ Release, in two steps rather than one:
    `package.json` change landing on `main`), tags `vX.Y.Z`, and publishes a GitHub Release with
    auto-generated notes (from merged PR titles since the last release - this project's existing
    one-PR-per-feature history already reads well that way with no extra changelog upkeep). It
-   checks whether that version is already tagged first, so it's safe to trigger on *any*
-   `package.json` change on `main`, not just ones the bump PR itself caused, without ever
-   double-tagging. Pushing a *tag* isn't subject to the branch ruleset at all - that only
-   targets the `main` branch ref, not tag refs - so this step can push directly with the
-   default `GITHUB_TOKEN`.
+   only actually tags/releases when the **version field itself changed** since the immediately
+   prior commit on `main` (`github.event.before`) *and* that version isn't already tagged -
+   confirmed the hard way that the weaker "not already tagged" check alone isn't enough: merging
+   this automation's own setup PR touched `package.json` (a new npm script, not a version bump)
+   and was enough to fire the workflow and tag `v0.0.1`, a version nobody had actually released.
+   Pushing a *tag* isn't subject to the branch ruleset at all - that only targets the `main`
+   branch ref, not tag refs - so this step can push directly with the default `GITHUB_TOKEN`.
 3. The same **Tag Release** run also copies that Release's own generated notes into
    [CHANGELOG.md](CHANGELOG.md) (newest entry on top, existing ones kept below it) and opens a
    *second* PR for that - one source of truth (the Release notes), just also mirrored into a
