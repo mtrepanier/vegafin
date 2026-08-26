@@ -152,6 +152,16 @@ export const en = {
   'home.nextUp': 'Next Up',
   'home.latestLibrary': 'Latest {libraryName}',
 
+  // Search
+  'search.placeholder': 'Search movies, shows, people...',
+  'search.searching': 'Searching...',
+  'search.noResults': 'No results for "{query}"',
+  'search.section.movies': 'Movies',
+  'search.section.series': 'TV Shows',
+  'search.section.episodes': 'Episodes',
+  'search.section.collections': 'Collections',
+  'search.section.people': 'People',
+
   // Placeholder screens not built yet (Phase 2/3) - see StubScreen.tsx
   'stub.phase1': 'Phase 1',
   'stub.phase2': 'Phase 2',
