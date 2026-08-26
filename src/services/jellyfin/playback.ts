@@ -1,14 +1,17 @@
 import { getMediaInfoApi } from '@jellyfin/sdk/lib/utils/api/media-info-api';
 import { getPlaystateApi } from '@jellyfin/sdk/lib/utils/api/playstate-api';
 import { getTvShowsApi } from '@jellyfin/sdk/lib/utils/api/tv-shows-api';
+import { getMediaSegmentsApi } from '@jellyfin/sdk/lib/utils/api/media-segments-api';
 import { DlnaProfileType } from '@jellyfin/sdk/lib/generated-client/models/dlna-profile-type';
 import { EncodingContext } from '@jellyfin/sdk/lib/generated-client/models/encoding-context';
 import { MediaStreamProtocol } from '@jellyfin/sdk/lib/generated-client/models/media-stream-protocol';
 import { SubtitleDeliveryMethod } from '@jellyfin/sdk/lib/generated-client/models/subtitle-delivery-method';
 import { PlayMethod } from '@jellyfin/sdk/lib/generated-client/models/play-method';
+import { MediaSegmentType } from '@jellyfin/sdk/lib/generated-client/models/media-segment-type';
 import type { DeviceProfile } from '@jellyfin/sdk/lib/generated-client/models/device-profile';
 import type { MediaStream } from '@jellyfin/sdk/lib/generated-client/models/media-stream';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
+import type { MediaSegmentDto } from '@jellyfin/sdk/lib/generated-client/models/media-segment-dto';
 import { jellyfinClient } from './JellyfinClient';
 import { msToTicks } from '../../util/format';
 
@@ -150,6 +153,20 @@ export async function fetchNextUpEpisode(userId: string, seriesId: string): Prom
     enableUserData: true,
   });
   return data.Items?.[0] ?? null;
+}
+
+/** Intro/outro skip markers from the MediaSegments API - populated server-side by the Intro
+ * Skipper plugin, not anything this app writes. Scoped to just these two types (Commercial/
+ * Preview/Recap exist in the schema too, but PlaybackScreens.tsx's Skip Intro/Skip Outro
+ * feature doesn't surface them). Used for both a movie and an episode's own itemId - the server
+ * just returns an empty list for anything without segment data, so no BaseItemKind check is
+ * needed here. */
+export async function fetchMediaSegments(itemId: string): Promise<MediaSegmentDto[]> {
+  const { data } = await getMediaSegmentsApi(jellyfinClient.api).getItemSegments({
+    itemId,
+    includeSegmentTypes: [MediaSegmentType.Intro, MediaSegmentType.Outro],
+  });
+  return data.Items ?? [];
 }
 
 export interface ProgressReportInfo {

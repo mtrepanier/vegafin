@@ -3,6 +3,7 @@ const mockReportPlaybackStart = jest.fn();
 const mockReportPlaybackProgress = jest.fn();
 const mockReportPlaybackStopped = jest.fn();
 const mockGetNextUp = jest.fn();
+const mockGetItemSegments = jest.fn();
 const mockGetUri = jest.fn((url: string) => `https://server.example.com${url}`);
 
 jest.mock('../../../src/services/jellyfin/JellyfinClient', () => ({
@@ -29,14 +30,20 @@ jest.mock('@jellyfin/sdk/lib/utils/api/tv-shows-api', () => ({
   getTvShowsApi: () => ({ getNextUp: mockGetNextUp }),
 }));
 
+jest.mock('@jellyfin/sdk/lib/utils/api/media-segments-api', () => ({
+  getMediaSegmentsApi: () => ({ getItemSegments: mockGetItemSegments }),
+}));
+
 import {
   negotiatePlayback,
   reportPlaybackStart as reportStart,
   reportPlaybackProgress as reportProgress,
   reportPlaybackStopped as reportStopped,
   fetchNextUpEpisode,
+  fetchMediaSegments,
 } from '../../../src/services/jellyfin/playback';
 import { PlayMethod } from '@jellyfin/sdk/lib/generated-client/models/play-method';
+import { MediaSegmentType } from '@jellyfin/sdk/lib/generated-client/models/media-segment-type';
 
 describe('negotiatePlayback', () => {
   beforeEach(() => {
@@ -228,5 +235,29 @@ describe('fetchNextUpEpisode', () => {
   it('returns null when Items is missing entirely', async () => {
     mockGetNextUp.mockResolvedValue({ data: {} });
     expect(await fetchNextUpEpisode('user-1', 'series-1')).toBeNull();
+  });
+});
+
+describe('fetchMediaSegments', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('returns the items, scoped to Intro/Outro segment types', async () => {
+    const items = [
+      { Id: 'seg-1', ItemId: 'item-1', Type: MediaSegmentType.Intro, StartTicks: 0, EndTicks: 900_000_000 },
+    ];
+    mockGetItemSegments.mockResolvedValue({ data: { Items: items } });
+
+    const result = await fetchMediaSegments('item-1');
+
+    expect(result).toEqual(items);
+    expect(mockGetItemSegments).toHaveBeenCalledWith({
+      itemId: 'item-1',
+      includeSegmentTypes: [MediaSegmentType.Intro, MediaSegmentType.Outro],
+    });
+  });
+
+  it('returns an empty array when the server has no segment data for the item', async () => {
+    mockGetItemSegments.mockResolvedValue({ data: {} });
+    expect(await fetchMediaSegments('item-1')).toEqual([]);
   });
 });

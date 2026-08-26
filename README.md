@@ -62,10 +62,18 @@ Phase 0's scaffold (navigation graph, auth/session, theming) is done, and Phase 
   [Internationalization](#internationalization-englishfrench) below.
 - **An end-of-playback Next Up card**, wiring up Show Next Up/Auto Play Next Up to real
   behavior - see [Next Up prompt](#next-up-prompt-nextupcardtsx) below.
+- **Multi-server/user switching** from the side nav's avatar/username row, without a full
+  re-login - see [Switching servers/users](#switching-serversusers-userlistscreentsx) below.
+- **Skip Intro/Skip Outro**, driven by the server's Intro Skipper plugin data (Jellyfin's
+  MediaSegments API) rather than anything detected client-side - see
+  [Skip Intro/Outro](#skip-introoutro-skipsegmentbuttontsx) below.
+- **Hold-to-fast-seek on the remote's dedicated FF/RW buttons** - a tap skips the same amount
+  as the D-pad arrow, holding ramps into a faster repeating seek - see
+  [Hold-to-fast-seek](#hold-to-fast-seek-on-the-remotes-ffrw-buttons) below.
 
 Still not implemented: the *behavior* behind Play Theme Music, update checking, search,
-subtitle customization/delay, trickplay, skip intro/outro, live TV, music playback,
-Seerr/Jellyseerr discover, a third+ language. See [Roadmap](#roadmap).
+subtitle customization/delay, trickplay, live TV, music playback, Seerr/Jellyseerr discover, a
+third+ language. See [Roadmap](#roadmap).
 
 ### Correction: playback uses KeplerVideoSurfaceView + a vendored Shaka Player, not KeplerVideoView
 
@@ -137,6 +145,95 @@ settings actually govern.
   "back cancels the pending transition, doesn't leave" matches the convention other TV players
   use. Every other back-press behavior in this file (exiting, or - a pre-existing, unrelated
   gap - not closing the track picker first) is unchanged.
+
+### Skip Intro/Outro (`SkipSegmentButton.tsx`)
+
+Wires up two new Settings screen preferences, Skip Intro and Skip Outro, each independently
+`Ask` (show a button, don't move playback without an explicit press) / `Auto-Skip` (seek past
+it the moment it starts, no prompt) / `Off` (ignore the segment entirely) - `Ask` is the
+default for both, matching the reasoning in `defaultAppSettings()`: silently jumping playback
+forward the first time someone sees this feature reads as broken, not helpful.
+
+- **Segment data comes from Jellyfin's MediaSegments API, not anything detected client-side.**
+  `fetchMediaSegments` (`playback.ts`) calls `getMediaSegmentsApi().getItemSegments({ itemId,
+  includeSegmentTypes: [Intro, Outro] })` - populated server-side by the Intro Skipper plugin
+  having already scanned the library. An item the plugin hasn't scanned just returns an empty
+  list, which this feature treats identically to "no segments," not an error state. Commercial/
+  Preview/Recap segment types exist in the same API but aren't requested or surfaced here -
+  Skip Intro/Outro only, matching what was actually asked for.
+- **Fetched once per item (keyed on `itemId`), independent of `enableNextUp`** - unlike the
+  Next Up card (an episode-to-episode "recommended next" concept, opted into by `PlaybackScreen`
+  only), segment data is a per-item property that applies equally to `PlaybackListScreen`'s
+  Play All/Shuffle flow and to movies, not just single episodes played directly.
+- **Which segment is "active" is derived, not polled on a timer** - `activeSegment` is a
+  `useMemo` over the already-tracked `positionSec` (updated by the player's own `timeupdate`
+  event) and the fetched segment list, rather than a separate `setInterval` re-checking
+  position against segment ranges the way the Kotlin reference implementation does. `timeupdate`
+  already fires often enough; a second poll loop would just be redundant work.
+- **`seekBy` (relative, used by the skip-forward/back remote buttons) is now built on a new
+  `seekTo` (absolute)** - Auto-Skip and the button's manual skip both need to jump to a segment's
+  exact `EndTicks`, not to "current position + N seconds," so the shared clamping/fastSeek logic
+  was pulled out into `seekTo` first rather than duplicated.
+- **A `skippedSegmentIdsRef` (a ref, not state) guards against re-firing Auto-Skip on every
+  position tick while still inside the same segment** - the seek itself is asynchronous, so
+  several `timeupdate` events can still land inside `[start, end)` before it actually lands;
+  without the guard, each one would re-trigger another `seekTo` call. It's a ref rather than
+  state because nothing needs to re-render off it changing on its own - the seek that follows
+  already advances `positionSec`, which is what the UI actually reacts to.
+- **A separate `dismissedSegmentId` (state, not a ref) tracks an explicit "Ask" dismissal
+  without skipping** - pressing the remote's back button while the button is visible hides it
+  for that one segment (same "back cancels the overlay, doesn't exit" convention the Next Up
+  card uses) without seeking anywhere. Unlike the ref above, this needs to be state: nothing
+  else about position changes on a dismiss, so nothing else would trigger the re-render hiding
+  the button needs.
+- **The button is suppressed whenever the Next Up card is visible** (`skipButtonVisible`
+  checks `!nextUpVisible`), rather than letting both render at once - both would claim
+  `hasTVPreferredFocus` on mount, which is exactly the "more than one focus claim per screen at
+  once" class of bug this project's Focus system section warns about, and if Next Up is already
+  showing the current item is basically over anyway, so skipping its outro doesn't matter much.
+
+### Hold-to-fast-seek on the remote's FF/RW buttons
+
+The remote's dedicated fast-forward/rewind buttons (`forward`/`skip_forward` and
+`rewind`/`skip_backward` `HWEvent` types - distinct from the D-pad's `right`/`left`, which
+stay single-skip-only and unchanged) now behave like a real FF/RW button: a single press skips
+by the same `skipForwardSec`/`skipBackwardSec` amount as the D-pad arrow, but holding it down
+ramps into a faster, repeating seek the longer it's held.
+
+- **There's no native "key held" signal to read directly.** `HWEvent.eventKeyAction` exists in
+  the type (`-1 | 1 | 0 | number`) but the app's own already-confirmed-on-device behavior (see
+  `KEY_EVENT_DEDUPE_MS`'s own comment, and this same fact independently re-confirmed in
+  Wholphin-vega/astra-tv's separate `useRemoteInput.ts`) is that **a single physical press
+  always delivers exactly two events - its down and up phases, and for some keys a distinct
+  `<key>_up` type - never more.** That's a real, tested constant, not a guess, and it's what
+  hold detection is built on: a *third* same-direction event arriving without a release gap in
+  between can only mean the button is still physically held (native key-repeat), since a lone
+  click is confirmed to top out at two. `SEEK_HOLD_MIN_EVENTS_TO_RAMP = 3` in
+  `PlaybackScreens.tsx` encodes exactly that threshold, and reuses `KEY_EVENT_DEDUPE_MS`'s own
+  350ms value as the release-gap rather than a second tuned constant, since it's the same
+  underlying platform behavior being measured either way.
+- **Forward/rewind bypass the generic per-key dedupe entirely**, unlike every other key
+  (`handleTVEvent`'s early-return branch for these two types) - the generic dedupe's whole job
+  is collapsing a click's own down+up pair into one action, which is exactly the information
+  hold-detection needs to see raw, not have hidden from it.
+- **Detecting "held" and actually seeking are two separate, decoupled mechanisms.** Raw events
+  only drive a `seekHoldRef` state machine (event count, and a release-watchdog `setTimeout`
+  that fires once no further same-direction event arrives within the gap window) - the actual
+  repeated `seekBy` calls run on the component's own `setInterval` (`SEEK_HOLD_TICK_MS`, 400ms),
+  not once per raw event. This matters because native key-repeat rate is unknown and could be
+  much faster than 400ms once it kicks in; seeking on every raw event during a hold would risk
+  a runaway, uncontrollably fast seek rather than a smooth ramp.
+- **The ramp doubles the per-tick seek multiplier every `SEEK_HOLD_RAMP_TICKS` (3) ticks,
+  capped at `SEEK_HOLD_MAX_MULTIPLIER` (8x)** - a DVR-style "gets faster the longer you hold it"
+  curve rather than an instant jump to max speed or a flat repeated skip.
+- **This whole mechanism is a best-effort design, not something verified against a real key-
+  repeat trace** - there's no way to log/inspect the Vega Virtual Device's exact native
+  key-repeat timing from outside the app itself, so the 3-events-means-held threshold and the
+  400ms/8x ramp curve are tuned from the one platform fact that *is* independently confirmed
+  (single press = exactly 2 events), not from having seen what a real hold's event stream looks
+  like. If a hold on-device doesn't ramp the way it should, the next step is temporary raw
+  `HWEvent` logging during a manual hold test (the same technique that originally nailed down
+  the play/pause `eventType` mismatch below), not more guessing from code alone.
 
 ### Focus system
 
@@ -619,17 +716,18 @@ since Settings is a bare full-screen stack push (`RootStackParamList`), not draw
   `PlaybackScreens.tsx`** (`SEEK_FORWARD_SECONDS`/`SEEK_BACK_SECONDS`/`CONTROLS_HIDE_DELAY_MS` -
   30/10/5) **- now read from `useAppSettings()` instead**, with `defaultAppSettings()` carrying
   the exact same numbers forward so installing this didn't change anyone's actual playback
-  behavior. "Show Clock" (`HomeHero.tsx`) is the only other setting wired to real behavior so
-  far.
-- **Play Theme Music, Show Next Up, and Auto Play Next Up persist correctly but don't drive
-  anything yet, and Updates is an inert display row, not a fake working control.** Theme-song
-  audio playback and an end-of-playback Next Up prompt are their own separate features that
-  haven't been built, and there's no update-check mechanism to wire "Updates" to yet - rather
-  than wire a setting up to nothing or guess at behavior, `SettingsInertRow.tsx` renders a
-  plain `View`, not a `Pressable`, for anything without a real control behind it yet, so D-pad
-  navigation skips it entirely instead of landing on a focusable dead end. Interface Language
-  used to be one of these too, until [Internationalization](#internationalization-englishfrench)
-  below made it a real control.
+  behavior.
+- **"Show Clock" (`HomeHero.tsx`), Show Next Up/Auto Play Next Up (see
+  [Next Up prompt](#next-up-prompt-nextupcardtsx)), and Skip Intro/Skip Outro (see
+  [Skip Intro/Outro](#skip-introoutro-skipsegmentbuttontsx)) are all wired to real behavior.**
+  Play Theme Music persists correctly but doesn't drive anything yet (theme-song audio playback
+  is its own separate, unbuilt feature), and Updates is an inert display row, not a fake working
+  control, since there's no update-check mechanism to wire it to yet - rather than wire a
+  setting up to nothing or guess at behavior, `SettingsInertRow.tsx` renders a plain `View`, not
+  a `Pressable`, for anything without a real control behind it yet, so D-pad navigation skips it
+  entirely instead of landing on a focusable dead end. Interface Language used to be one of
+  these too, until [Internationalization](#internationalization-englishfrench) below made it a
+  real control.
 
 ### Internationalization (English/French)
 
@@ -865,8 +963,9 @@ scoped to the **service/business-logic layer**, not screens or components:
 - Auth/session (`ServerRepository`), device-local app preferences (`AppSettingsRepository` -
   same `subscribe`/`getSnapshot`/`init` shape as `ServerRepository`, see
   [Settings](#settings-settingsscreentsx) above), server URL scheme resolution/probing
-  (`serverUrl`, `JellyfinClient`), the Jellyfin API layer (`playback` negotiation + progress
-  reporting + `fetchNextUpEpisode`, `homeRows` including the Continue Watching/Next Up split,
+  (`serverUrl`, `JellyfinClient` including `createApiFor`'s standalone per-user `Api`
+  instances), the Jellyfin API layer (`playback` negotiation + progress reporting +
+  `fetchNextUpEpisode` + `fetchMediaSegments`, `homeRows` including the Continue Watching/Next Up split,
   `library`, `detail` including `fetchLocalTrailers` and `fetchEpisodes`'s `People` field, `images`
   including the hero's series-aware poster/logo fallbacks and the side nav's avatar lookup,
   `episodeBadge`'s "E5" corner-badge labeling, `libraryIconName`'s CollectionType→icon mapping,
@@ -921,9 +1020,13 @@ runner.
   [Internationalization](#internationalization-englishfrench)), and Show Next Up/Auto Play Next
   Up to an actual [end-of-playback card](#next-up-prompt-nextupcardtsx). The side nav's avatar
   now opens a [multi-server/user switcher](#switching-serversusers-userlistscreentsx)
-  reusing the pre-auth setup screens. Still open: the behavior behind Play Theme Music
-  (theme-song audio), update checking, plus search, subtitle customization, trickplay, skip
-  intro/outro, PIN-lock routing on app-launch session restore specifically, a third+ language.
+  reusing the pre-auth setup screens, Skip Intro/Skip Outro are wired to a
+  [server-driven skip button](#skip-introoutro-skipsegmentbuttontsx), and the remote's
+  dedicated FF/RW buttons now
+  [ramp into a faster seek the longer they're held](#hold-to-fast-seek-on-the-remotes-ffrw-buttons).
+  Still open: the behavior behind Play Theme Music (theme-song audio), update checking, plus
+  search, subtitle customization, trickplay, PIN-lock routing on app-launch session restore
+  specifically, a third+ language.
 - **Phase 3** — Live TV guide + DVR, music playback (now playing/visualizer/lyrics),
   Jellyseerr discover integration, screensaver/slideshow, photo albums.
 
@@ -965,7 +1068,8 @@ src/
                                above), series/ (SeasonTabs/EpisodeRow/FocusedEpisodeFooter - the
                                rest of SeriesOverview's parts)
     playback/                 PlaybackScreen, PlaybackListScreen (KeplerVideoSurfaceView + ShakaPlayer),
-                               NextUpCard.tsx - see Next Up prompt above
+                               NextUpCard.tsx - see Next Up prompt above; SkipSegmentButton.tsx -
+                               see Skip Intro/Outro above
     settings/                 SettingsScreen.tsx (real - see Settings above) plus the
                                still-Phase-2-stub HomeSettings/SubtitleSettings/
                                UserAppPreferences screens; SettingsToggle/SettingsStepper/
