@@ -10,9 +10,18 @@
 # a clean install and the real release build - see DEVELOPER.md's "Versioning & releases"
 # section for how a tag gets created in the first place.
 #
+# Also passes an explicit --build-number to the build - manifest.toml deliberately doesn't hold
+# one (see DEVELOPER.md), so it defaults to 0, which Amazon's own upload validation rejects
+# outright ("build_number must be greater than 0, found: 0") - confirmed on a real submission
+# attempt. build_number tracks individual *upload attempts*, not releases (the same tagged
+# version might need re-uploading after a rejection, with a new build number each time), which
+# is exactly why it's supplied fresh at build time instead of being committed to git alongside
+# the version.
+#
 # Usage:
-#   scripts/release-build.sh          # builds the latest tag
-#   scripts/release-build.sh v1.2.0   # builds a specific tag
+#   scripts/release-build.sh                          # latest tag, timestamp build number
+#   scripts/release-build.sh v1.2.0                    # specific tag, timestamp build number
+#   scripts/release-build.sh v1.2.0 42                 # specific tag, specific build number
 #
 # Leaves the repo in detached HEAD at the built tag when it's done, deliberately - the printed
 # summary says so, and how to get back to a branch, rather than switching back automatically and
@@ -65,15 +74,24 @@ if [ "$PKG_VERSION" != "$EXPECTED_VERSION" ] || [ "$MANIFEST_VERSION" != "$EXPEC
 fi
 
 echo "Version check OK ($EXPECTED_VERSION consistent across the tag, package.json, and manifest.toml)."
+
+BUILD_NUMBER="${2:-$(date +%s)}"
+if ! [[ "$BUILD_NUMBER" =~ ^[0-9]+$ ]] || [ "$BUILD_NUMBER" -le 0 ]; then
+  echo "error: build number must be a positive integer, got '$BUILD_NUMBER'." >&2
+  git checkout --quiet "$STARTING_REF"
+  exit 1
+fi
+echo "Using build number $BUILD_NUMBER (Amazon's upload validation rejects 0/unset)."
+
 echo
 echo "Installing dependencies (npm ci)..."
 npm ci
 
 echo
-echo "Building Release .vpkg..."
-npm run build:release
+echo "Building Release .vpkg (build number $BUILD_NUMBER)..."
+npm run build:release -- --build-number "$BUILD_NUMBER"
 
 echo
-echo "Done. Built $TAG at commit $(git rev-parse --short HEAD)."
+echo "Done. Built $TAG (build $BUILD_NUMBER) at commit $(git rev-parse --short HEAD)."
 echo "The repo is now in detached HEAD at this tag, deliberately - the .vpkg you just built came"
 echo "from exactly this commit. Run 'git checkout $STARTING_REF' to get back to where you were."
