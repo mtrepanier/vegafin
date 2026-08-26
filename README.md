@@ -35,7 +35,9 @@ Phase 0's scaffold (navigation graph, auth/session, theming) is done, and Phase 
   Recently Added row per library — rather than Kotlin's user-configurable row settings, which
   is Phase 2 territory. See [Home screen](#home-screen-homescreentsx-homeherotsx) below.
 - **Library grid/list browsing** (`FilteredCollection`/`ItemGrid`/`MoreHomeRow`/`Favorites`),
-  with sort and a grid/list view toggle.
+  with a directly-selectable sort picker (any field/direction combination in one press - see
+  [Library sort picker](#library-sort-picker-libraryscreenstsx) below) and a grid/list view
+  toggle.
 - **Detail pages** for Movie, Collection (box set), and Person, plus a full binge-style
   `SeriesOverview` page (season tabs + episode row + focused-episode action buttons) that also
   covers episodes — there's no standalone episode detail page; Phase 1 didn't build the
@@ -70,6 +72,10 @@ Phase 0's scaffold (navigation graph, auth/session, theming) is done, and Phase 
 - **Hold-to-fast-seek on the remote's dedicated FF/RW buttons** - a tap skips the same amount
   as the D-pad arrow, holding ramps into a faster repeating seek - see
   [Hold-to-fast-seek](#hold-to-fast-seek-on-the-remotes-ffrw-buttons) below.
+- **A directly-selectable, per-library/per-user library sort picker**, and a series
+  unwatched-episode-count corner badge on every card list that can show one - see
+  [Library sort picker](#library-sort-picker-libraryscreenstsx) and
+  [Series unwatched-episode badge](#series-unwatched-episode-badge-seriesbadgets) below.
 
 Still not implemented: the *behavior* behind Play Theme Music, update checking, search,
 subtitle customization/delay, trickplay, live TV, music playback, Seerr/Jellyseerr discover, a
@@ -443,6 +449,18 @@ screen. This repo keeps that same split:
   there for anything landing on that route with just an itemId/type pair) since redirecting
   would need a fetch just to learn the episode's series id, and every real caller already goes
   through `navigateToItem.ts` instead, which has the full item in hand.
+- **`backBehavior="history"` on `Drawer.Navigator`** - without it (the default is
+  `initialRoute`), the hardware back button from *any* `DrawerParamList` screen always landed on
+  `Home` regardless of actual navigation history, confirmed on-device as a real bug: library
+  grid → item detail → back went to Home instead of back to the grid. Every drill-down screen
+  (`ItemGrid`, `MediaItem`, `SeriesOverview`, `Search`, etc.) lives in this same Drawer
+  navigator rather than a nested Stack (see the `fullScreen` split above - they need this
+  navigator's own persistent side-nav/backdrop chrome), so React Navigation's Drawer/Tab router
+  treats each as a top-level destination with no push/pop stack of its own by default;
+  `'history'` instead makes it pop to whichever screen was actually focused immediately before,
+  which is what a drill-down screen's back button needs. Screens never call `goBack()`
+  themselves for this - the platform's own hardware-back-to-`goBack()` wiring already existed,
+  this only changes what `goBack()` resolves to on this specific navigator.
 - **`RootStackParamList`** (`fullScreen = true`) — `Settings`, `SubtitleSettings`,
   `Playback`, `PlaybackList`, `Slideshow`, `NowPlaying`, etc. Pushed as bare full-screen
   stack screens over `Main` (which hosts the drawer navigator).
@@ -463,6 +481,17 @@ that used to sit at the top of the Home screen (`LibraryTile.tsx`) was removed o
 covered the same navigation — the rail is reachable from every screen, the old row only from
 Home's very top.
 
+- **Library rows are sorted by type, not left in whatever order the server returned** -
+  `library.ts`'s `sortLibrariesByType` (a stable sort - ties, and any type not in the list,
+  keep their original relative order) puts Movies libraries first, then TV Shows, then Photos,
+  then Live TV, then everything else. `getUserViews` doesn't group by type on its own (often
+  just alphabetical), so without this a Movies and a TV Shows library could land in either
+  order depending on how they happen to be named. **Live TV/DVR recordings are not a nav entry
+  here** - `RecordingsScreen.tsx` is a registered but unwired Phase 3 stub (matching how
+  `Discover` is deliberately left out of the visible menu for the same reason - see below); a
+  Live TV *library* (`CollectionType.Livetv`, if the server has one configured) still appears
+  as an ordinary library row like any other, just sorted to this position, since browsing one
+  already works today via the same generic `ItemGrid` every other library uses.
 - **Collapse/expand**: starts collapsed (~72px, icons only) and expands (~240px, icons +
   labels) while focus is anywhere inside it, via `focus/useFocusGroupExpanded.ts` - each row's
   `onFocus`/`onBlur` bubbles up to a shared counter, since neither the drawer package nor
@@ -682,6 +711,127 @@ Guest Stars → "More Like This".
   `numberOfLines={2}` only bounds the *maximum*; the wrapping `overviewBox` view's fixed
   `height: 44` (2 lines' worth of `styles.overview`'s own `lineHeight`) is what actually keeps
   the space constant regardless of how much (or how little) text is actually there.
+
+### Library sort picker (`LibraryScreens.tsx`)
+
+The sort control shared by every library-browsing screen (`FilteredCollectionScreen`,
+`ItemGridScreen`, `FavoritesScreen`) used to be a single button that cycled to the next field
+on each press, always ascending - reaching, say, Rating descending meant repeatedly pressing
+through every other field/direction combination first, with no way to land on it directly.
+It's now a picker: pressing the button opens a panel listing every field with both its
+directions as separate, directly-selectable rows ("A to Z"/"Z to A" for Name, "Newest
+First"/"Oldest First" for the two date fields, "Highest First"/"Lowest First" for Rating - not
+a generic "Ascending"/"Descending" for all four), so any combination is one press away instead
+of several.
+
+- **`LibraryGrid` now takes the current `{ sortBy, direction }` as a controlled prop (`sort`),
+  not a `sortable` boolean plus its own separately-tracked cycle index.** The earlier version
+  had two pieces of sort state that had to be kept in sync by hand - the parent screen's actual
+  `sort` (driving the fetch) and `LibraryGrid`'s own local `sortIndex` (driving what the button
+  displayed) - which happened to always agree only because both started at the same default and
+  only ever changed together via the same cycle handler. Passing the parent's real value in
+  directly removes the duplication; omitting `sort` entirely (not passing `sortable={false}`) is
+  what now means "nothing to sort here," for `MoreHomeRowScreen`'s fixed-order home row.
+- **Per-field direction phrasing, not one generic Ascending/Descending pair.** `library.ts`'s
+  `LIBRARY_SORT_OPTIONS` gives each field a `direction: { asc, desc }` label pair pulled from
+  one of three shared sets (`ALPHA_DIRECTION`/`DATE_DIRECTION`/`RATING_DIRECTION`) rather than
+  a literal "Ascending"/"Descending" that would read oddly for a date or rating field.
+- **The panel mirrors `PlaybackScreens.tsx`'s `TrackPicker` in shape** (grouped headings, rows,
+  a Close row) without importing anything from it, since it belongs to an entirely different
+  screen - including that same component's already-accepted gap where the remote's back button
+  doesn't close it; there's no back-key interception on this screen to hook into, matching that
+  precedent rather than adding new behavior this change wasn't asked to fix.
+- **Opens with focus already on whichever row matches the current sort.** Each row conditionally
+  claims `hasTVPreferredFocus` off `current.sortBy`/`current.direction` rather than always
+  defaulting to the first row, so re-opening the picker to change your mind doesn't first
+  require re-finding where you already were.
+- **The choice is remembered per library/collection, per signed-in Jellyfin user - not
+  device-global.** A new `JellyfinUser.librarySort?: Record<string, LibrarySortPreference>`
+  field (`storage/types.ts`) lives on the same per-user record `appPreferences`/`pin` already
+  do, not on `AppSettingsRepository` (device-local, shared across every profile - the wrong
+  place for something the request specifically wanted scoped per user). Each screen keys its
+  own entry with the exact same string it already used for `LibraryGrid`'s React `key` prop
+  (`` `${parentId}-${includeItemTypes}` `` for `ItemGridScreen`, `` `${itemId}-${parentType}` ``
+  for `FilteredCollectionScreen`, a fixed `'favorites'` for `FavoritesScreen`) - "which grid this
+  is" turned out to be the same identity needed for both React reconciliation and persistence
+  scoping, so no separate key scheme was invented. `ServerRepository.setLibrarySort(key, sortBy,
+  direction)` is a new method (mirrors `changeUser`'s own upsert-and-persist shape, but patches
+  just this one field on the current user rather than replacing the whole record) that a
+  screen's `onSortChange` calls alongside its own local `setSort` - fire-and-forget, matching
+  `AppSettingsRepository.update`'s calling convention elsewhere in the Settings screen.
+  `library.ts`'s new `resolveLibrarySort(stored)` is what each screen reads the persisted value
+  back through - `librarySort`'s `sortBy` is stored as a loose `string`, not the real
+  `LibrarySortField` union, specifically so `storage/types.ts` doesn't need to import a
+  different feature area's types; `resolveLibrarySort` re-validates it against the real
+  `LIBRARY_SORT_OPTIONS` at read time, falling back to the default (Name, Ascending) for a
+  missing entry or a stored value that no longer matches any current option.
+- **Fixed a real bug found via on-device testing right after this shipped:** picking a sort in
+  one library and then clicking a *different* library in the side nav kept using the sort just
+  picked, instead of restoring that other library's own remembered choice. Cause:
+  `ItemGridScreen`/`FilteredCollectionScreen` are React Navigation screens, and navigating to
+  the same route with new params (clicking another library while already on the library-grid
+  screen) updates `route.params` on the *same* mounted instance rather than remounting it - so
+  `sort`'s lazy `useState` initializer, which only ever runs once at first mount, never re-ran
+  for the new library. `LibraryGrid`'s own `key={sortKey}` already remounted *its* local state
+  (`viewMode`, `sortPickerOpen`) correctly on a library change; the bug was that the parent
+  screen's own `sort` state had no equivalent reset. Fixed with a `useEffect` keyed on `sortKey`
+  that explicitly re-resolves `sort` from the new library's persisted value (or the default) any
+  time the key changes - the same kind of reset-on-identity-change `LibraryGrid`'s `key` prop
+  already handled, just for state that lives one level up where a `key` prop can't reach it.
+
+### Library grids need an explicit item-type filter, or stray Folder items leak in
+
+Found via on-device testing right after the sort picker above shipped: browsing a whole library
+from the side nav's library row showed a real, unwanted tile mixed in among actual movies -
+blank/imageless, with a title matching the library's own physical on-disk folder name ("movies"
+for an English-named library, "films" for a French one).
+
+**Cause**: `MainDrawerNavigator.tsx`'s library row navigated to `ItemGridScreen` with only
+`parentId` set, no `includeItemTypes` - relying on `recursive: true` alone to pull in every
+descendant item. Without a type filter, that recursive `getItems` call also picks up any
+`Folder`-type entries nested anywhere under the library (a stray "extras"/miscellaneous
+subfolder, or - as here - the library's own on-disk folder structure surfacing as an item in
+its own right), not just the real `Movie`/`Series`/etc. items the grid was meant to show.
+
+**Fix**: `library.ts`'s new `libraryItemKinds(collectionType)` maps a library's own
+`CollectionType` to the real `BaseItemKind[]` its full-contents grid should filter to (`Movies`
+→ `Movie`, `Tvshows` → `Series`, `Music` → `MusicAlbum`, and so on) - mirrors
+`libraryIcons.ts`'s existing `CollectionType`→icon mapping, just for `includeItemTypes` instead
+of an icon name. `MainDrawerNavigator.tsx`'s library row now passes
+`includeItemTypes: libraryItemKinds(library.CollectionType)` alongside `parentId`, so the query
+is scoped to real content items only. Returns `undefined` (no filter, same as before this
+existed) for a `CollectionType` this app has no specific mapping for - not every library type
+needed to be covered to fix the reported bug, just the two the screenshots showed (Movies, in
+two different server display languages).
+
+### Series unwatched-episode badge (`seriesBadge.ts`)
+
+Every card list that can show a Series item (Home rows, library grids, Favorites, "More Like
+This"/similar-items rows, Collection detail) now shows a small corner badge with the number of
+episodes left to watch, for any series that isn't fully watched - not just the checkmark movies
+and fully-watched series already got.
+
+- **`seriesUnwatchedCount(item)`** (`services/jellyfin/seriesBadge.ts`) reads
+  `item.UserData?.UnplayedItemCount` - a stock Jellyfin field, already populated server-side for
+  Series items whenever a request carries user context, the same one Wholphin's own `GridCard`
+  reads (`dto?.userData?.unplayedItemCount`) - no extra `Fields` request param needed. Returns
+  `undefined` for anything that isn't a Series, or a Series with nothing left unwatched (count 0
+  or missing), so callers can pass its result straight through as a prop without an `if` at each
+  call site.
+- **Shares the `watched` checkmark's exact corner slot in `CardImage.tsx` rather than adding a
+  second, separately-positioned badge** - a series with any unwatched episodes always has
+  `Played: false` and vice versa, so the two are already mutually exclusive in the data; a plain
+  `unwatchedCount ? <count badge> : watched ? <checkmark> : null` reflects that directly instead
+  of risking both rendering at once. Still shifts down to sit below the "E5" episode-number
+  badge the same way the checkmark already did, for the rare case both are relevant on the same
+  card (they aren't, in practice - `episodeBadge` only appears on Continue Watching/Next Up
+  cards, which show an *Episode* item standing in for its series' poster, and `Episode` items
+  don't carry their own `UnplayedItemCount`, only `Series`/`Season` parents do - kept anyway
+  since it's the same one-line style rule the checkmark already followed, not new complexity).
+- **Wired into every call site that already had `watched`/`favorite` props** (`HomeScreen.tsx`,
+  `LibraryScreens.tsx`, `PosterRow.tsx`, `CollectionDetail.tsx`) - `EpisodeRow.tsx` and
+  `CastRow.tsx` weren't, since they render individual episodes and cast members respectively,
+  neither of which this badge applies to.
 
 ### Settings (`SettingsScreen.tsx`)
 
@@ -966,9 +1116,13 @@ scoped to the **service/business-logic layer**, not screens or components:
   (`serverUrl`, `JellyfinClient` including `createApiFor`'s standalone per-user `Api`
   instances), the Jellyfin API layer (`playback` negotiation + progress reporting +
   `fetchNextUpEpisode` + `fetchMediaSegments`, `homeRows` including the Continue Watching/Next Up split,
-  `library`, `detail` including `fetchLocalTrailers` and `fetchEpisodes`'s `People` field, `images`
+  `library` including `resolveLibrarySort`'s stored-value validation, `libraryItemKinds`'s
+  CollectionType→item-type mapping, `sortLibrariesByType`'s side-nav ordering, and
+  `ServerRepository.setLibrarySort`'s per-user persistence, `detail` including
+  `fetchLocalTrailers` and `fetchEpisodes`'s `People` field, `images`
   including the hero's series-aware poster/logo fallbacks and the side nav's avatar lookup,
-  `episodeBadge`'s "E5" corner-badge labeling, `libraryIconName`'s CollectionType→icon mapping,
+  `episodeBadge`'s "E5" corner-badge labeling, `seriesBadge`'s unwatched-episode-count badge,
+  `libraryIconName`'s CollectionType→icon mapping,
   the `ItemPager` pagination hook), the pure formatting helpers in `util/format.ts` (including
   the shared `formatHeroInfoLine` and `formatSeasonLabel`), `util/useCurrentTime.ts` (the hero
   clock's interval hook), theming (`ThemeContext`), the focus system's
@@ -1049,7 +1203,7 @@ src/
   services/
     jellyfin/                 JellyfinClient.ts (@jellyfin/sdk wrapper), images.ts, ItemPager.ts,
                                homeRows.ts, library.ts, detail.ts, playback.ts, libraryIcons.ts,
-                               episodeBadge.ts
+                               episodeBadge.ts, seriesBadge.ts
     storage/ServerRepository.ts   Session/auth (mirrors data/ServerRepository.kt),
                                AppSettingsRepository.ts/AppSettingsContext.tsx (device-local app
                                preferences - see Settings above)

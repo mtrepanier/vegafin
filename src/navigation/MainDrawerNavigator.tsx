@@ -30,6 +30,7 @@ import { jellyfinClient } from '../services/jellyfin/JellyfinClient';
 import { fetchUserLibraries } from '../services/jellyfin/homeRows';
 import { userImageUrl } from '../services/jellyfin/images';
 import { libraryIconName } from '../services/jellyfin/libraryIcons';
+import { libraryItemKinds, sortLibrariesByType } from '../services/jellyfin/library';
 import { ScreenBackdropContext } from './screenBackdropContext';
 import { ScreenBackdrop } from '../screens/ScreenBackdrop';
 import { useT } from '../i18n/useTranslation';
@@ -126,7 +127,7 @@ function DrawerContent({ navigation, state }: DrawerContentComponentProps) {
       })
       .catch(() => {});
     fetchUserLibraries(userId).then((items) => {
-      if (!cancelled) setLibraries(items);
+      if (!cancelled) setLibraries(sortLibrariesByType(items));
     });
     return () => {
       cancelled = true;
@@ -220,7 +221,11 @@ function DrawerContent({ navigation, state }: DrawerContentComponentProps) {
                   onBlur={release}
                   onPress={() =>
                     library.Id &&
-                    navigation.navigate('ItemGrid', { title: library.Name ?? t('common.library'), parentId: library.Id })
+                    navigation.navigate('ItemGrid', {
+                      title: library.Name ?? t('common.library'),
+                      parentId: library.Id,
+                      includeItemTypes: libraryItemKinds(library.CollectionType),
+                    })
                   }
                 />
               ))}
@@ -277,6 +282,16 @@ export function MainDrawerNavigator() {
         <ScreenBackdrop item={backdropItem} />
         <DrawerExpandedContext.Provider value={expandedContextValue}>
           <Drawer.Navigator
+            // Default backBehavior ('initialRoute') always sent the hardware back button to
+            // Home regardless of actual navigation history - confirmed on-device: library grid
+            // -> item detail -> back landed on Home instead of the grid. 'history' instead pops
+            // to whichever drawer screen was actually focused before (the grid, in that case) -
+            // every drill-down screen (ItemGrid, MediaItem, SeriesOverview, Search, etc.) lives
+            // in this same Drawer navigator rather than a nested stack (see navigation/types.ts's
+            // DrawerParamList/RootStackParamList split comment for why - they need this
+            // navigator's own persistent chrome/backdrop), so this is the one place that can fix
+            // this for all of them at once.
+            backBehavior="history"
             screenOptions={{
               headerShown: false,
               drawerType: 'permanent',

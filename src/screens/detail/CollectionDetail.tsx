@@ -7,6 +7,7 @@ import { layout } from '../../theme/types';
 import { useCurrentUser } from '../../services/storage/ServerRepositoryContext';
 import { fetchCollectionItems, fetchItem, setFavorite } from '../../services/jellyfin/detail';
 import { primaryImageUrl } from '../../services/jellyfin/images';
+import { seriesUnwatchedCount } from '../../services/jellyfin/seriesBadge';
 import { IconButton } from '../../components/IconButton';
 import { ItemGrid } from '../../components/ItemGrid';
 import { PosterCard } from '../../components/cards/PosterCard';
@@ -104,6 +105,7 @@ export function CollectionDetail({ itemId, navigation }: Props) {
             watched={collectionItem.UserData?.Played ?? false}
             favorite={collectionItem.UserData?.IsFavorite ?? false}
             progressPercent={collectionItem.UserData?.PlayedPercentage ?? undefined}
+            unwatchedCount={seriesUnwatchedCount(collectionItem)}
             hasTVPreferredFocus={hasTVPreferredFocus}
             onFocus={onFocus}
             onPress={() => navigateToItem(navigation, collectionItem)}

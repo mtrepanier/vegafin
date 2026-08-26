@@ -10,6 +10,7 @@ import { useScreenBackdrop } from '../navigation/screenBackdropContext';
 import { fetchDefaultHomeRowConfigs, fetchHomeRowItems, homeRowRef, type HomeRowConfig } from '../services/jellyfin/homeRows';
 import { primaryImageUrl, seriesAwarePosterImageUrl } from '../services/jellyfin/images';
 import { episodeBadgeLabel } from '../services/jellyfin/episodeBadge';
+import { seriesUnwatchedCount } from '../services/jellyfin/seriesBadge';
 import { useLanguage } from '../i18n/useLanguage';
 import { ItemRow } from '../components/ItemRow';
 import { PosterCard } from '../components/cards/PosterCard';
@@ -164,6 +165,7 @@ export function HomeScreen() {
                     watched={item.UserData?.Played ?? false}
                     favorite={item.UserData?.IsFavorite ?? false}
                     episodeBadge={episodeBadgeLabel(item, language)}
+                    unwatchedCount={seriesUnwatchedCount(item)}
                     hasTVPreferredFocus={hasTVPreferredFocus}
                     onFocus={() => {
                       onFocus();

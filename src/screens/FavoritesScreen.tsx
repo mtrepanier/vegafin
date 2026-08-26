@@ -1,18 +1,20 @@
 import React, { useCallback, useState } from 'react';
 import { useCurrentUser } from '../services/storage/ServerRepositoryContext';
-import { fetchLibraryPage, LIBRARY_SORT_OPTIONS, type LibrarySortField, type SortDirection } from '../services/jellyfin/library';
+import { serverRepository } from '../services/storage/ServerRepository';
+import { fetchLibraryPage, resolveLibrarySort } from '../services/jellyfin/library';
 import { useT } from '../i18n/useTranslation';
 import { LibraryGrid } from './library/LibraryScreens';
+
+// Fixed - there's only one Favorites view per user, unlike the library/filtered-collection
+// screens which need a per-instance key.
+const SORT_KEY = 'favorites';
 
 // ui/detail/FavoritesPage.kt equivalent.
 export function FavoritesScreen() {
   const currentUser = useCurrentUser();
   const userId = currentUser?.user.id;
   const t = useT();
-  const [sort, setSort] = useState<{ sortBy: LibrarySortField; direction: SortDirection }>({
-    sortBy: LIBRARY_SORT_OPTIONS[0].value,
-    direction: 'Ascending',
-  });
+  const [sort, setSort] = useState(() => resolveLibrarySort(currentUser?.user.librarySort?.[SORT_KEY]));
 
   const fetchPage = useCallback(
     (startIndex: number, limit: number) =>
@@ -32,8 +34,11 @@ export function FavoritesScreen() {
     <LibraryGrid
       title={t('nav.favorites')}
       fetchPage={fetchPage}
-      sortable
-      onSortChange={(sortBy, direction) => setSort({ sortBy, direction })}
+      sort={sort}
+      onSortChange={(sortBy, direction) => {
+        setSort({ sortBy, direction });
+        serverRepository.setLibrarySort(SORT_KEY, sortBy, direction);
+      }}
     />
   );
 }

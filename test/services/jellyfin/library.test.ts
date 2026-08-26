@@ -11,9 +11,17 @@ jest.mock('../../../src/services/jellyfin/homeRows', () => ({
   fetchHomeRowItems: (...args: unknown[]) => mockFetchHomeRowItems(...args),
 }));
 
-import { fetchLibraryPage, fetchHomeRowPage } from '../../../src/services/jellyfin/library';
+import {
+  fetchLibraryPage,
+  fetchHomeRowPage,
+  resolveLibrarySort,
+  libraryItemKinds,
+  sortLibrariesByType,
+} from '../../../src/services/jellyfin/library';
 import { ItemSortBy } from '@jellyfin/sdk/lib/generated-client/models/item-sort-by';
 import { SortOrder } from '@jellyfin/sdk/lib/generated-client/models/sort-order';
+import { BaseItemKind } from '@jellyfin/sdk/lib/generated-client/models/base-item-kind';
+import { CollectionType } from '@jellyfin/sdk/lib/generated-client/models/collection-type';
 
 beforeEach(() => jest.clearAllMocks());
 
@@ -109,5 +117,88 @@ describe('fetchHomeRowPage', () => {
     const page = fetchHomeRowPage('user-1', { kind: 'continueWatching' });
     const result = await page(5, 10);
     expect(result).toEqual({ items: [], totalCount: 1 });
+  });
+});
+
+describe('resolveLibrarySort', () => {
+  it('defaults to Name/Ascending when nothing is stored', () => {
+    expect(resolveLibrarySort(undefined)).toEqual({ sortBy: ItemSortBy.SortName, direction: 'Ascending' });
+  });
+
+  it('returns the stored field/direction when the field still exists', () => {
+    expect(resolveLibrarySort({ sortBy: ItemSortBy.CommunityRating, direction: 'Descending' })).toEqual({
+      sortBy: ItemSortBy.CommunityRating,
+      direction: 'Descending',
+    });
+  });
+
+  it('falls back to the default when the stored sortBy no longer matches a known option', () => {
+    expect(resolveLibrarySort({ sortBy: 'SomeRemovedField', direction: 'Descending' })).toEqual({
+      sortBy: ItemSortBy.SortName,
+      direction: 'Ascending',
+    });
+  });
+});
+
+describe('libraryItemKinds', () => {
+  it('maps Movies to just Movie', () => {
+    expect(libraryItemKinds(CollectionType.Movies)).toEqual([BaseItemKind.Movie]);
+  });
+
+  it('maps Tvshows to just Series', () => {
+    expect(libraryItemKinds(CollectionType.Tvshows)).toEqual([BaseItemKind.Series]);
+  });
+
+  it('returns undefined for a CollectionType with no mapping', () => {
+    expect(libraryItemKinds(CollectionType.Livetv)).toBeUndefined();
+  });
+
+  it('returns undefined for null/undefined', () => {
+    expect(libraryItemKinds(null)).toBeUndefined();
+    expect(libraryItemKinds(undefined)).toBeUndefined();
+  });
+});
+
+describe('sortLibrariesByType', () => {
+  it('orders Movies, then Tvshows, then Photos, then Livetv, then everything else', () => {
+    const music = { Id: 'music', CollectionType: CollectionType.Music };
+    const photos = { Id: 'photos', CollectionType: CollectionType.Photos };
+    const liveTv = { Id: 'livetv', CollectionType: CollectionType.Livetv };
+    const tvShows = { Id: 'tv', CollectionType: CollectionType.Tvshows };
+    const movies = { Id: 'movies', CollectionType: CollectionType.Movies };
+
+    const result = sortLibrariesByType([music, photos, liveTv, tvShows, movies]);
+
+    expect(result.map((l) => l.Id)).toEqual(['movies', 'tv', 'photos', 'livetv', 'music']);
+  });
+
+  it('keeps the original relative order for libraries of the same type (stable sort)', () => {
+    const moviesA = { Id: 'movies-a', CollectionType: CollectionType.Movies };
+    const moviesB = { Id: 'movies-b', CollectionType: CollectionType.Movies };
+
+    expect(sortLibrariesByType([moviesB, moviesA]).map((l) => l.Id)).toEqual(['movies-b', 'movies-a']);
+  });
+
+  it('keeps the original relative order among libraries with no mapped priority', () => {
+    const books = { Id: 'books', CollectionType: CollectionType.Books };
+    const music = { Id: 'music', CollectionType: CollectionType.Music };
+
+    expect(sortLibrariesByType([music, books]).map((l) => l.Id)).toEqual(['music', 'books']);
+  });
+
+  it('sorts a library with no CollectionType at all after everything mapped', () => {
+    const unknown = { Id: 'unknown' };
+    const movies = { Id: 'movies', CollectionType: CollectionType.Movies };
+
+    expect(sortLibrariesByType([unknown, movies]).map((l) => l.Id)).toEqual(['movies', 'unknown']);
+  });
+
+  it('does not mutate the input array', () => {
+    const input = [{ Id: 'photos', CollectionType: CollectionType.Photos }, { Id: 'movies', CollectionType: CollectionType.Movies }];
+    const original = [...input];
+
+    sortLibrariesByType(input);
+
+    expect(input).toEqual(original);
   });
 });

@@ -139,6 +139,12 @@ export const fr: Record<TranslationKey, string> = {
   'library.sort.dateAdded': "Date d'ajout",
   'library.sort.releaseDate': 'Date de sortie',
   'library.sort.rating': 'Évaluation',
+  'library.sort.direction.aToZ': 'A à Z',
+  'library.sort.direction.zToA': 'Z à A',
+  'library.sort.direction.newestFirst': "Plus récent d'abord",
+  'library.sort.direction.oldestFirst': "Plus ancien d'abord",
+  'library.sort.direction.highestFirst': "Plus élevé d'abord",
+  'library.sort.direction.lowestFirst': "Plus faible d'abord",
 
   // Home rows
   'home.continueWatching': 'Continuer à regarder',

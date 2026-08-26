@@ -14,6 +14,11 @@ interface Props {
   /** "E5" corner badge for an episode card standing in for its series' poster - see
    * `episodeBadgeLabel`. */
   episodeBadge?: string;
+  /** Remaining-episode-count badge for a Series card that isn't fully watched - see
+   * `seriesUnwatchedCount`. Occupies the same corner slot as `watched`'s checkmark rather than
+   * stacking alongside it: the two are already mutually exclusive in the data (a series with
+   * any unwatched episodes has `Played: false`), so only one is ever shown. */
+  unwatchedCount?: number;
   borderRadius?: number;
 }
 
@@ -22,7 +27,7 @@ interface Props {
  * favorite heart, and resume-progress bar overlays common to all of them. Mirrors
  * `ItemCardImage.kt`.
  */
-export function CardImage({ uri, width, height, progressPercent, watched, favorite, episodeBadge, borderRadius = 6 }: Props) {
+export function CardImage({ uri, width, height, progressPercent, watched, favorite, episodeBadge, unwatchedCount, borderRadius = 6 }: Props) {
   const { colors } = useTheme();
   const showProgress = progressPercent != null && progressPercent > 0 && progressPercent < 100;
 
@@ -43,7 +48,11 @@ export function CardImage({ uri, width, height, progressPercent, watched, favori
         </View>
       ) : null}
 
-      {watched ? (
+      {unwatchedCount ? (
+        <View style={[styles.countBadge, episodeBadge ? styles.countBadgeBelowEpisodeBadge : null]}>
+          <Text style={styles.countBadgeText}>{unwatchedCount}</Text>
+        </View>
+      ) : watched ? (
         <View
           style={[
             styles.badge,
@@ -112,6 +121,26 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.65)',
   },
   episodeBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#fff',
+  },
+  countBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    minWidth: 24,
+    height: 20,
+    paddingHorizontal: 4,
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+  },
+  countBadgeBelowEpisodeBadge: {
+    top: 32,
+  },
+  countBadgeText: {
     fontSize: 12,
     fontWeight: '700',
     color: '#fff',
