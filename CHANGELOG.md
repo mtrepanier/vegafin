@@ -4,6 +4,16 @@ All notable changes to VegaFin are tracked here, generated automatically from
 merged pull requests at release time - see
 [DEVELOPER.md](DEVELOPER.md#versioning--releases) for how.
 
+## [v0.1.1] - 2026-08-26
+
+## What's Changed
+* Supply build_number at build time, not via a hardcoded manifest field by @mtrepanier in https://github.com/mtrepanier/vegafin/pull/15
+* Update CHANGELOG.md for v0.1.0 by @github-actions[bot] in https://github.com/mtrepanier/vegafin/pull/14
+* Release v0.1.1 by @github-actions[bot] in https://github.com/mtrepanier/vegafin/pull/16
+
+
+**Full Changelog**: https://github.com/mtrepanier/vegafin/compare/v0.1.0...v0.1.1
+
 ## [v0.1.0] - 2026-08-26
 
 ## What's Changed
