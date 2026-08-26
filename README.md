@@ -15,7 +15,7 @@ Wholphin's source, if you want to compare, lives at
 [damontecres/Wholphin](https://github.com/damontecres/Wholphin) and is referenced in some
 code comments as "the Kotlin source."
 
-## Status: Phase 1 done, Phase 2 in progress (settings)
+## Status: Phase 1 done, Phase 2 in progress, Phase 3 started (Live TV)
 
 Phase 0's scaffold (navigation graph, auth/session, theming) is done, and Phase 1 now adds:
 
@@ -78,10 +78,13 @@ Phase 0's scaffold (navigation graph, auth/session, theming) is done, and Phase 
   [Series unwatched-episode badge](#series-unwatched-episode-badge-seriesbadgets) below.
 - **Search** - Movies/TV Shows/Episodes/Collections/People, each as its own labeled row - see
   [Search](#search-searchscreentsx-searchts) below.
+- **Live TV channel list + program guide** (Phase 3's first slice) - browse channels, see
+  what's on, tune in and watch live - see [Live TV](#live-tv-guide-livetvguidescreentsx-
+  livetvplayerscreentsx-livetvts) below. DVR (recording, scheduling) is not part of this slice.
 
 Still not implemented: the *behavior* behind Play Theme Music, update checking,
-subtitle customization/delay, trickplay, live TV, music playback, Seerr/Jellyseerr discover, a
-third+ language. See [Roadmap](#roadmap).
+subtitle customization/delay, trickplay, DVR/recording scheduling, music playback,
+Seerr/Jellyseerr discover, a third+ language. See [Roadmap](#roadmap).
 
 ### Correction: playback uses KeplerVideoSurfaceView + a vendored Shaka Player, not KeplerVideoView
 
@@ -98,9 +101,12 @@ and direct-played raw files failed to seek at the native layer
 
 The actual, current architecture (confirmed working end-to-end on the Vega Virtual Device):
 
-- `negotiatePlayback` (`services/jellyfin/playback.ts`) always requests transcoded HLS
+- `negotiatePlayback` (`services/jellyfin/playback.ts`) requests transcoded HLS by default
   (`EnableDirectPlay: false, EnableDirectStream: false`) — HLS's segment-based seeking works
-  reliably where raw-file byte-range seeking didn't.
+  reliably where raw-file byte-range seeking didn't. VOD (every call site except Live TV) always
+  gets this default; Live TV opts out via `allowDirectPlayback` since there's no seeking on a
+  live stream for the seek-reliability reasoning to apply to - see
+  [Live TV guide](#live-tv-guide-livetvguidescreentsx-livetvplayerscreentsx-livetvts) below.
 - `KeplerVideoSurfaceView` (the w3cmedia README's "pre-buffering mode": a manual
   surface-handle handshake, `onSurfaceViewCreated`/`onSurfaceViewDestroyed`) replaces
   `KeplerVideoView`, paired with a bare `VideoPlayer` instance and fully custom on-screen
@@ -242,6 +248,135 @@ ramps into a faster, repeating seek the longer it's held.
   like. If a hold on-device doesn't ramp the way it should, the next step is temporary raw
   `HWEvent` logging during a manual hold test (the same technique that originally nailed down
   the play/pause `eventType` mismatch below), not more guessing from code alone.
+
+### Live TV guide (`LiveTvGuideScreen.tsx`, `LiveTvPlayerScreen.tsx`, `liveTv.ts`)
+
+Phase 3's first slice, deliberately scoped down from the Roadmap's full "Live TV guide + DVR" -
+this is channel list + program guide + watching a channel live, **not** recording. Wholphin's
+own reference implementation (`ui/detail/livetv/`) is ~2200 lines across 8 files just for this
+area, roughly the size of its entire playback view-model - building the whole thing (a
+synchronized channels×timeline EPG grid, plus timer/series-timer scheduling) in one pass would
+have been a much bigger, riskier undertaking than every other feature in this README, so this
+was scoped down first: read-only guide + live playback now, recording scheduling later if
+wanted.
+
+- **No separate streaming endpoint for a channel - it's the exact same `negotiatePlayback`
+  (`playback.ts`) VOD already uses, but with direct play/stream allowed instead of forced off.**
+  A Live TV channel is just another `BaseItemDto` with its own `Id`, so `getPostedPlaybackInfo`
+  is the same call VOD makes, not a different client call - but VOD's own `EnableDirectPlay:
+  false, EnableDirectStream: false` (forced so seeking into a direct-played raw file doesn't hit
+  this platform's seek failure - see the playback correction above) doesn't apply here at all,
+  since there's nothing to seek on a live stream. **Confirmed on-device as a real bug**: forcing
+  transcode-only the same way VOD does meant the server never populated `TranscodingUrl` for a
+  channel, and playback just never started. `negotiatePlayback` now takes an
+  `allowDirectPlayback` option (`liveTv`'s `LiveTvPlayerScreen.tsx` is the only caller that
+  passes it) that requests direct play/stream *enabled* instead, and falls back to building a
+  URL straight from `MediaSourceInfo.Path` (`SupportsDirectPlay`/`SupportsDirectStream`) when
+  the server chooses that over transcoding - which is expected for Live TV, since Jellyfin's own
+  LiveTV pipeline typically already remuxes tuner input to HLS on its own end before this app
+  ever asks. VOD's own call site never passes the option, so its exact previously-tested
+  behavior (transcode-only, unconditionally) is unchanged.
+- **The lower-level `OpenLiveStream`/`LiveStreamId`/`closeLiveStream` cleanup path exists in the
+  SDK too, but isn't wired up here** - it applies to a raw tuner-backed stream opened directly,
+  not the HLS URL (whether transcoded or direct-play/stream) this negotiation returns either
+  way. If channel-switching turns out to exhaust tuners on some servers, that's the first place
+  to look.
+- **A separate, much simpler player (`LiveTvPlayerScreen.tsx`), not a parameterized reuse of
+  `PlaybackScreens.tsx`'s `PlaybackBody`.** A channel has no duration, can't be seeked or
+  resumed, and has no Next Up/Skip Intro-Outro (both depend on a finite timeline or per-item
+  segment data a channel doesn't have) - threading all of that through `PlaybackBody` as extra
+  conditionals would have made an already-long file harder to follow for both cases. What *is*
+  shared: the same low-level primitives (`KeplerVideoSurfaceView`'s manual surface-handle
+  handshake, `VideoPlayer`, `ShakaPlayer`) and the same hard-won lifecycle shape - generation
+  tracking so a stale, superseded player's late events can't corrupt current state, and the
+  same belt-and-suspenders unmount cleanup backing up `onSurfaceViewDestroyed` (which is not
+  reliably fired - see the playback correction above for how that was originally confirmed).
+  No seek bar, no track picker, no resume position - reported progress is just elapsed
+  wall-clock watch time since tune-in (`Date.now() - watchStartedAtRef.current`), the same
+  approximation other Jellyfin clients use for a live session, since there's nothing to resume.
+- **Channel switching remounts the player body via `key={channelId}`**, the same trick
+  `PlaybackScreen`'s own Next Up already uses to swap to a new episode - the outer
+  `LiveTvPlayerScreen` holds `channelId` state and the already-fetched channel list (so
+  channel-up/down doesn't need to refetch), while the keyed inner body gets a fully fresh
+  lifecycle (surface, player, generation counter) per channel rather than trying to hot-swap the
+  source on a live player instance.
+- **`up`/`channel_up` and `down`/`channel_down` `HWEvent` types drive channel-up/down** -
+  `TVTypes.d.ts`'s own `HWEvent` union lists dedicated channel-up/down key types alongside the
+  D-pad's plain `up`/`down`, so both are handled the same way (next/previous channel in the
+  already-sorted list, wrapping around at either end).
+- **A real synchronized channels×timeline grid** - channels pinned in a fixed left column, a
+  shared time header pinned at top, and every channel's programs laid out as proportional-width
+  cells aligned to that one timeline, all scrolling together. The first version instead rendered
+  each channel as its own independently-scrolling `ItemRow` (the same row primitive every other
+  horizontal list in this app uses) to avoid a real EPG grid's meaningfully bigger scroll-sync
+  problem - reasonable-sounding on paper, but confirmed wrong the moment it was actually seen
+  on-device against real Jellyfin clients: no shared timeline, no proportional widths, nothing
+  scrolling in sync, so it just didn't read as a "guide." Rebuilt as an actual grid instead of
+  keeping the simpler version, per that feedback.
+  - **No `FlatList`/`focusItemAlignment` here** - those solve one scroll axis for a single
+    uniform list (which is what every other row/grid in this app is), not a two-axis layout
+    where three separately-rendered pieces (header, channel column, body) must all move
+    together. Structurally: one outer vertical `ScrollView` (channel column + body, so they
+    share vertical position automatically as siblings) with a horizontal `ScrollView` nested
+    inside the body for the timeline axis, mirrored to the header's own horizontal `ScrollView`
+    - the classic frozen-header/frozen-column spreadsheet-grid shape.
+  - **Scrolling is entirely programmatic (`scrollOffsetToReveal`, `util/scroll.ts`), not
+    native scroll-follows-focus.** Every `ScrollView` here is `scrollEnabled={false}` - there's
+    no touch/drag input on this platform to disable, but it also means nothing depends on an
+    assumption about whether this platform's focus engine auto-scrolls a plain `ScrollView` to
+    keep a newly-focused child visible, which isn't something to take on faith (this project's
+    own focus/scroll history has repeatedly found exactly that kind of assumption wrong, most
+    recently the side nav's own D-pad-escape gotchas - see Focus system below). Each cell's
+    `onFocus` instead computes whether it's already fully visible on both axes and, if not,
+    calls `scrollTo` on the body plus whichever of the header/channel-column pieces shares that
+    axis.
+  - **This is the highest-risk piece built this session** - a genuinely harder TV-focus problem
+    than anything else in this app (`ItemGrid`'s own uniform poster grid gets scroll-follow for
+    free from `FlatList`; this has no such built-in). Needs careful on-device confirmation of
+    whether focus actually lands where expected as it moves between cells/rows, and whether the
+    mirrored header/column scrolling visibly lags the body.
+  - Fetches a fixed 4-hour window (`GUIDE_WINDOW_HOURS`) rather than paged/scrollable time
+    navigation - "browse tonight's primetime lineup" is a real feature this doesn't have yet,
+    not an oversight. No "now" position indicator line yet either, for the same reason.
+  - **Fixed a real bug found via on-device testing right after this shipped:** channel logos
+    rendered at full natural pixel size instead of scaled to fit, bleeding out of their row
+    into the timeline area. Cause: `channelLogo`'s `width: '100%'` had no concrete parent width
+    to resolve against - the enclosing vertical `ScrollView`'s own `style={{width:
+    CHANNEL_COL_WIDTH}}` constrains its *viewport*, not the layout width of its children, and
+    nothing in the `Pressable`/`View` chain down to the `Image` set an explicit width either.
+    Fixed by giving the channel label's own `Pressable` an explicit `width: CHANNEL_COL_WIDTH -
+    8` (`channelLabelWrap`) and adding `overflow: 'hidden'` on the label box as a safety net
+    regardless of what caused an oversized child in the future.
+  - **Fixed a second real bug found right after that one:** the time header and the program
+    cells beneath it were visibly out of sync - cells for a channel's current program rendered
+    hundreds of pixels away from the time labels actually above them, with a large empty gap in
+    between. Cause: the header's horizontal `ScrollView` and the body's horizontal `ScrollView`
+    each resolved their own `flex: 1` width independently (the body's inner horizontal
+    `ScrollView` had no `style` at all, relying on default stretch-to-parent that - per the logo
+    bug just above - isn't something to trust blindly on this platform), and the two ended up
+    different widths. Fixed by measuring the available width *once*, from a single plain `View`
+    in the header row (`onTimelineViewportLayout` → `viewportWidth` state), and applying that
+    same explicit numeric width to both the header's `ScrollView` and the body's horizontal
+    `ScrollView` - one measurement, shared, instead of two independent ones that could disagree.
+  - **Added the Home hero's own `Clock` component to this screen's title row too**, gated by
+    the same `showClock` setting - an EPG guide benefiting from an at-a-glance current time is
+    a fairly universal convention (all of the reference clients compared against showed one),
+    and `Clock.tsx` was already a plain, screen-agnostic component with no Home-specific
+    dependencies, so this was a straightforward reuse, not a new component.
+- **Tapping any program cell - including a channel with no guide data at all - tunes that
+  channel live, regardless of which cell was pressed.** There's no way to jump to a future
+  program without recording support in scope, so every tap means the same thing; a channel
+  with an empty guide window still renders one placeholder cell (`livetv.noGuideData`) so it
+  stays reachable rather than silently disappearing from the list.
+- **The side nav's library row for a `CollectionType.Livetv` library now opens this guide
+  instead of the generic `ItemGrid`** (`MainDrawerNavigator.tsx`) - a plain poster grid doesn't
+  suit channels/programs the way it does every other library type. `sortLibrariesByType`
+  already placed Live TV libraries in the side nav's Movies → TV Shows → Photos → Live TV
+  order (see [Library sort picker](#library-sort-picker-libraryscreenstsx) above); only what
+  happens on tap changed here.
+- **`RecordingsScreen.tsx` stays an unwired Phase 3 stub, same as `Discover`** - recording
+  scheduling (timers, series timers) is explicitly out of scope for this slice, so there's
+  nothing yet for a Recordings nav entry to show.
 
 ### Focus system
 
@@ -425,7 +560,8 @@ to the bug above, and confirmed fine independently.
 | Library browsing | `ui/components/CollectionFolderView.kt` | `src/screens/library/LibraryScreens.tsx`, `src/screens/FavoritesScreen.tsx` |
 | Detail pages | `ui/detail/{movie,episode,collection,series}/*`, `PersonPage.kt` | `src/screens/MediaItemScreen.tsx`, `src/screens/detail/`, `src/screens/SeriesOverviewScreen.tsx` |
 | Playback | `ui/playback/PlaybackViewModel.kt`, `util/TrackActivityPlaybackListener.kt` | `src/screens/playback/PlaybackScreens.tsx`, `src/services/jellyfin/playback.ts`, `src/w3cmedia/` (vendored Shaka Player + polyfills) |
-| Everything else (live TV, music, Seerr/Jellyseerr discover) | `ui/discover/`, live TV/music screens | not started — Phase 2/3 |
+| Live TV (guide + playback only, no DVR) | `ui/detail/livetv/` | `src/screens/livetv/`, `src/services/jellyfin/liveTv.ts` |
+| Everything else (DVR, music, Seerr/Jellyseerr discover) | `ui/discover/`, DVR/music screens | not started — Phase 2/3 |
 
 ### Navigation
 
@@ -1163,12 +1299,16 @@ scoped to the **service/business-logic layer**, not screens or components:
   `library` including `resolveLibrarySort`'s stored-value validation, `libraryItemKinds`'s
   CollectionType→item-type mapping, `sortLibrariesByType`'s side-nav ordering, and
   `ServerRepository.setLibrarySort`'s per-user persistence, `search`'s per-type parallel
-  queries, `detail` including `fetchLocalTrailers` and `fetchEpisodes`'s `People` field, `images`
+  queries, `liveTv` including the guide's channel-grouping, `formatProgramTimeRange`,
+  `isProgramAiring`, `layoutGuideCells`'s proportional cell positioning/window-clipping, and
+  `guideTimeLabels`, `detail` including `fetchLocalTrailers` and `fetchEpisodes`'s `People`
+  field, `images`
   including the hero's series-aware poster/logo fallbacks and the side nav's avatar lookup,
   `episodeBadge`'s "E5" corner-badge labeling, `seriesBadge`'s unwatched-episode-count badge,
   `libraryIconName`'s CollectionType→icon mapping,
   the `ItemPager` pagination hook), the pure formatting helpers in `util/format.ts` (including
-  the shared `formatHeroInfoLine` and `formatSeasonLabel`), `util/useCurrentTime.ts` (the hero
+  the shared `formatHeroInfoLine` and `formatSeasonLabel`), `util/scroll.ts`'s
+  `scrollOffsetToReveal` (the Live TV guide's scroll-into-view math), `util/useCurrentTime.ts` (the hero
   clock's interval hook), theming (`ThemeContext`), the focus system's
   `useLastFocusedIndex`, `usePinScrollToStart`, and `useFocusGroupExpanded` hooks (the last one
   backs the side nav's collapse/expand-on-focus behavior - pulled out of
@@ -1226,8 +1366,10 @@ runner.
   stub. Still open: the behavior behind Play Theme Music (theme-song audio), update checking,
   subtitle customization, trickplay, PIN-lock routing on app-launch session restore
   specifically, a third+ language.
-- **Phase 3** — Live TV guide + DVR, music playback (now playing/visualizer/lyrics),
-  Jellyseerr discover integration, screensaver/slideshow, photo albums.
+- **Phase 3** (started) — [Live TV channel list + program guide](#live-tv-guide-livetvguidescreentsx-livetvplayerscreentsx-livetvts)
+  is done (browse channels, see what's on, watch live); DVR (recording, scheduling) is not.
+  Still open: music playback (now playing/visualizer/lyrics), Jellyseerr discover integration,
+  screensaver/slideshow, photo albums.
 
 ## Project layout
 
@@ -1244,11 +1386,12 @@ src/
                                useTranslation.ts (useT), useLanguage.ts, resolveLanguage.ts,
                                useSystemLocale.ts - see Internationalization above
   util/                       format.ts (incl. the shared formatHeroInfoLine),
-                               useCurrentTime.ts (hero clock), uuid.ts
+                               useCurrentTime.ts (hero clock), uuid.ts, scroll.ts
+                               (scrollOffsetToReveal - Live TV guide's scroll-into-view math)
   services/
     jellyfin/                 JellyfinClient.ts (@jellyfin/sdk wrapper), images.ts, ItemPager.ts,
                                homeRows.ts, library.ts, detail.ts, playback.ts, libraryIcons.ts,
-                               episodeBadge.ts, seriesBadge.ts, search.ts
+                               episodeBadge.ts, seriesBadge.ts, search.ts, liveTv.ts
     storage/ServerRepository.ts   Session/auth (mirrors data/ServerRepository.kt),
                                AppSettingsRepository.ts/AppSettingsContext.tsx (device-local app
                                preferences - see Settings above)
@@ -1269,6 +1412,9 @@ src/
     playback/                 PlaybackScreen, PlaybackListScreen (KeplerVideoSurfaceView + ShakaPlayer),
                                NextUpCard.tsx - see Next Up prompt above; SkipSegmentButton.tsx -
                                see Skip Intro/Outro above
+    livetv/                   LiveTvGuideScreen.tsx, LiveTvPlayerScreen.tsx (its own separate,
+                               simpler KeplerVideoSurfaceView + ShakaPlayer lifecycle) - see Live
+                               TV guide above
     settings/                 SettingsScreen.tsx (real - see Settings above) plus the
                                still-Phase-2-stub HomeSettings/SubtitleSettings/
                                UserAppPreferences screens; SettingsToggle/SettingsStepper/

@@ -5,12 +5,14 @@ import type { NativeStackNavigationProp } from '@amazon-devices/react-navigation
 import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
 import { getUserApi } from '@jellyfin/sdk/lib/utils/api/user-api';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
+import { CollectionType } from '@jellyfin/sdk/lib/generated-client/models/collection-type';
 import { HomeScreen } from '../screens/HomeScreen';
 import { SearchScreen } from '../screens/SearchScreen';
 import { SeriesOverviewScreen } from '../screens/SeriesOverviewScreen';
 import { MediaItemScreen } from '../screens/MediaItemScreen';
 import { RecordingsScreen } from '../screens/RecordingsScreen';
 import { FavoritesScreen } from '../screens/FavoritesScreen';
+import { LiveTvGuideScreen } from '../screens/livetv/LiveTvGuideScreen';
 import {
   FilteredCollectionScreen,
   ItemGridScreen,
@@ -219,14 +221,20 @@ function DrawerContent({ navigation, state }: DrawerContentComponentProps) {
                   expanded={expanded}
                   onFocus={reveal}
                   onBlur={release}
-                  onPress={() =>
-                    library.Id &&
+                  onPress={() => {
+                    if (!library.Id) return;
+                    if (library.CollectionType === CollectionType.Livetv) {
+                      // A generic poster grid doesn't suit channels/programs the way it does
+                      // every other library type - see LiveTvGuideScreen.tsx's own comment.
+                      navigation.navigate('LiveTvGuide');
+                      return;
+                    }
                     navigation.navigate('ItemGrid', {
                       title: library.Name ?? t('common.library'),
                       parentId: library.Id,
                       includeItemTypes: libraryItemKinds(library.CollectionType),
-                    })
-                  }
+                    });
+                  }}
                 />
               ))}
             </View>
@@ -333,6 +341,7 @@ export function MainDrawerNavigator() {
             <Drawer.Screen name="ItemGrid" component={ItemGridScreen} />
             <Drawer.Screen name="MoreHomeRow" component={MoreHomeRowScreen} />
             <Drawer.Screen name="Favorites" component={FavoritesScreen} />
+            <Drawer.Screen name="LiveTvGuide" component={LiveTvGuideScreen} />
             <Drawer.Screen name="Discover" component={DiscoverScreen} />
             <Drawer.Screen name="DiscoveredItem" component={DiscoveredItemScreen} />
             <Drawer.Screen name="DiscoverMoreResult" component={DiscoverMoreResultScreen} />

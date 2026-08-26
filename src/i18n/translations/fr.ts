@@ -151,6 +151,12 @@ export const fr: Record<TranslationKey, string> = {
   'home.nextUp': 'À suivre',
   'home.latestLibrary': 'Récemment ajoutés : {libraryName}',
 
+  'livetv.guide': 'Télé en direct',
+  'livetv.noChannels': 'Aucune chaîne disponible',
+  'livetv.noGuideData': 'Aucune information disponible',
+  'livetv.onNow': 'En ce moment',
+  'livetv.live': 'EN DIRECT',
+
   'search.placeholder': 'Rechercher des films, séries, personnes...',
   'search.searching': 'Recherche en cours...',
   'search.noResults': 'Aucun résultat pour « {query} »',

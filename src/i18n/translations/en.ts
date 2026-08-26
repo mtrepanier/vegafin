@@ -152,6 +152,13 @@ export const en = {
   'home.nextUp': 'Next Up',
   'home.latestLibrary': 'Latest {libraryName}',
 
+  // Live TV
+  'livetv.guide': 'Live TV',
+  'livetv.noChannels': 'No channels available',
+  'livetv.noGuideData': 'No listings available',
+  'livetv.onNow': 'On Now',
+  'livetv.live': 'LIVE',
+
   // Search
   'search.placeholder': 'Search movies, shows, people...',
   'search.searching': 'Searching...',
