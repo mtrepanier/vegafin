@@ -1344,11 +1344,15 @@ runner.
 
 Two separate fields track the app's version and don't sync themselves: `package.json`'s
 `"version"` and `manifest.toml`'s `[package] version` — the latter is the one that actually
-ships in the `.vpkg` and shows in the Amazon Appstore listing. `manifest.toml` also has a
-`build_number` (currently unset, defaulting to `0` — the `WARNING: build_number is 0` line
-every build prints), a separate integer meant to distinguish individual uploaded builds within
-the same version; it's a manual/local concern (e.g. `vega build --build-number N`), not
-something the automation below touches.
+ships in the `.vpkg` and shows in the Amazon Appstore listing. `manifest.toml` deliberately does
+**not** carry a `build_number` — that's a separate integer meant to distinguish individual
+*upload attempts* within the same version, not something that belongs in a git-tracked file
+(the same tagged version can need several re-uploads, e.g. after an Amazon rejection, each
+needing its own build number). Leaving it unset defaults to `0`, which Amazon's own VPT upload
+validation now rejects outright (`Package validation error ... build_number must be greater than
+0, found: 0`, confirmed on a real submission) — so it's supplied at build time instead, via
+`vega build`'s `--build-number N` flag, which `npm run release:build` (below) handles
+automatically.
 
 **One-time repo setting required before either workflow works**: Settings → Actions → General →
 Workflow permissions → check "Allow GitHub Actions to create and approve pull requests." Off by
@@ -1397,17 +1401,20 @@ though that would technically be possible - the actual store submission still is
 (no Amazon API for it that I've found), so automating just the build step would trade "run one
 npm command" for maintaining a self-hosted runner, without actually reaching a hands-off release.
 
-**`npm run release:build [tag]`** (`scripts/release-build.sh`) is the guardrail for that manual
-build step: rather than trusting whoever's building it to remember to check out the right tag
-first, it does that itself - checks out the given tag (or the latest one, if none is given),
-refuses to run at all with a dirty working tree (about to switch refs; would either lose or
-silently carry over local changes into the build), verifies `package.json`/`manifest.toml`'s
+**`npm run release:build [tag] [buildNumber]`** (`scripts/release-build.sh`) is the guardrail for
+that manual build step: rather than trusting whoever's building it to remember to check out the
+right tag first, it does that itself - checks out the given tag (or the latest one, if none is
+given), refuses to run at all with a dirty working tree (about to switch refs; would either lose
+or silently carry over local changes into the build), verifies `package.json`/`manifest.toml`'s
 versions actually agree with the tag before building anything (catches a tag created outside
 `tag-release.yml`, or a release workflow that partially failed), then runs `npm ci` + the real
-`build:release`. Leaves the repo in detached HEAD at the built tag on purpose when it's done -
-printed at the end, along with how to get back to a branch - rather than switching back
-automatically and risking whoever's about to upload the `.vpkg` believing they built one commit
-when they actually built another.
+`build:release` with an explicit `--build-number` forwarded through (`npm run build:release --
+--build-number N`). If no build number is given, it defaults to the current Unix timestamp -
+always positive, always higher than the last one, and needs no state tracked anywhere to pick
+the "next" number for a re-upload attempt. Leaves the repo in detached HEAD at the built tag on
+purpose when it's done - printed at the end, along with how to get back to a branch - rather
+than switching back automatically and risking whoever's about to upload the `.vpkg` believing
+they built one commit when they actually built another.
 
 ## Roadmap
 
