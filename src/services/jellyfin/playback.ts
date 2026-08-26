@@ -83,6 +83,13 @@ export interface NegotiatePlaybackOptions {
   audioStreamIndex?: number;
   subtitleStreamIndex?: number;
   positionMs?: number;
+  /** Live TV channels (`liveTv.ts`) pass this - the reason VOD forces transcode-only below is
+   * specifically about *seeking* into a direct-played raw file, which doesn't apply to a live
+   * stream (there's nothing to seek). Forcing direct play/stream off unconditionally risked the
+   * server not returning a usable source at all for some Live TV backends, which already
+   * transcode/remux tuner input to HLS on their own end regardless of what's requested here.
+   * Defaults to `false` - VOD's existing, tested behavior is unchanged unless a caller opts in. */
+  allowDirectPlayback?: boolean;
 }
 
 /** Always transcodes to HLS, mirroring `PlaybackViewModel.changeStreams()`'s transcode tier but
@@ -110,8 +117,8 @@ export async function negotiatePlayback(
       SubtitleStreamIndex: options.subtitleStreamIndex,
       StartTimeTicks: options.positionMs ? msToTicks(options.positionMs) : undefined,
       MaxStreamingBitrate: DEVICE_PROFILE.MaxStreamingBitrate,
-      EnableDirectPlay: false,
-      EnableDirectStream: false,
+      EnableDirectPlay: options.allowDirectPlayback ?? false,
+      EnableDirectStream: options.allowDirectPlayback ?? false,
       EnableTranscoding: true,
       AllowVideoStreamCopy: true,
       AllowAudioStreamCopy: true,
@@ -136,6 +143,32 @@ export async function negotiatePlayback(
     };
   }
 
+  // Only reachable when the caller opted into direct play/stream (Live TV) - VOD never sees
+  // this, since it always requests transcode-only and throws below if that's somehow missing.
+  // A Live TV source is frequently already HLS at the tuner/source level (Jellyfin's own LiveTV
+  // pipeline remuxes to HLS on its own end), so the server can return `SupportsDirectPlay`/
+  // `SupportsDirectStream` with a `Path` instead of ever populating `TranscodingUrl` at all.
+  if (options.allowDirectPlayback && source.Path && (source.SupportsDirectPlay || source.SupportsDirectStream)) {
+    return {
+      url: source.Path.startsWith('http') ? source.Path : api.getUri(source.Path),
+      playMethod: source.SupportsDirectStream ? PlayMethod.DirectStream : PlayMethod.DirectPlay,
+      mediaSourceId: source.Id,
+      playSessionId,
+      mediaStreams,
+    };
+  }
+
+  if (options.allowDirectPlayback) {
+    // Surfaced on-screen via LiveTvPlayerScreen.tsx's errorDetail rather than left to a log
+    // line - this codebase's own systemd-journald rate-limits and silently drops log bursts, so
+    // a diagnostic that's only visible in logs isn't a reliable diagnostic here at all. If this
+    // fires, `source`'s actual shape (which fields it did/didn't set) is the next thing to look
+    // at - Live TV negotiation is confirmed-uncertain territory (see liveTv.ts's own comment).
+    throw new Error(
+      `Server did not return a playable stream URL for this channel (Path: ${source.Path ?? 'none'}, ` +
+        `SupportsDirectPlay: ${source.SupportsDirectPlay ?? false}, SupportsDirectStream: ${source.SupportsDirectStream ?? false})`,
+    );
+  }
   throw new Error('Server did not return a playable stream URL');
 }
 

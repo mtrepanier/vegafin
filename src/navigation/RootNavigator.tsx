@@ -8,6 +8,7 @@ import {
   UserAppPreferencesScreen,
 } from '../screens/settings/SettingsScreens';
 import { PlaybackScreen, PlaybackListScreen } from '../screens/playback/PlaybackScreens';
+import { LiveTvPlayerScreen } from '../screens/livetv/LiveTvPlayerScreen';
 import { SlideshowScreen } from '../screens/SlideshowScreen';
 import { NowPlayingScreen } from '../screens/music/NowPlayingScreen';
 import { UpdateAppScreen } from '../screens/UpdateAppScreen';
@@ -32,6 +33,7 @@ export function RootNavigator() {
       <Stack.Screen name="UserAppPreferences" component={UserAppPreferencesScreen} />
       <Stack.Screen name="Playback" component={PlaybackScreen} options={{ animation: 'fade' }} />
       <Stack.Screen name="PlaybackList" component={PlaybackListScreen} options={{ animation: 'fade' }} />
+      <Stack.Screen name="LiveTvPlayback" component={LiveTvPlayerScreen} options={{ animation: 'fade' }} />
       <Stack.Screen name="Slideshow" component={SlideshowScreen} options={{ animation: 'fade' }} />
       <Stack.Screen name="NowPlaying" component={NowPlayingScreen} />
       <Stack.Screen name="UpdateApp" component={UpdateAppScreen} />

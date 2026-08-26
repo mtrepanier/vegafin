@@ -42,6 +42,7 @@ export type DrawerParamList = {
   ItemGrid: { title: string; parentId?: string; includeItemTypes?: BaseItemKind[]; initialPosition?: number };
   MoreHomeRow: { title: string; row: HomeRowRef; initialPosition?: number };
   Favorites: undefined;
+  LiveTvGuide: undefined;
   Discover: undefined;
   DiscoveredItem: { itemId: string };
   DiscoverMoreResult: { type: string; startIndex?: number };
@@ -64,6 +65,7 @@ export type RootStackParamList = {
     shuffle?: boolean;
     recursive?: boolean;
   };
+  LiveTvPlayback: { channelId: string };
   Slideshow: { parentId: string; index: number; startSlideshow: boolean };
   NowPlaying: undefined;
   UpdateApp: undefined;

@@ -120,6 +120,86 @@ describe('negotiatePlayback', () => {
     await expect(negotiatePlayback('user-1', 'item-1')).rejects.toThrow('Server did not return a playable stream URL');
   });
 
+  describe('allowDirectPlayback (Live TV)', () => {
+    it('requests direct play/stream enabled instead of forcing them off', async () => {
+      mockGetPostedPlaybackInfo.mockResolvedValue({ data: { MediaSources: [{ Id: 'src-1', TranscodingUrl: '/live.m3u8' }] } });
+
+      await negotiatePlayback('user-1', 'channel-1', { allowDirectPlayback: true });
+
+      const call = mockGetPostedPlaybackInfo.mock.calls[0][0];
+      expect(call.playbackInfoDto.EnableDirectPlay).toBe(true);
+      expect(call.playbackInfoDto.EnableDirectStream).toBe(true);
+      expect(call.playbackInfoDto.EnableTranscoding).toBe(true);
+    });
+
+    it('still prefers TranscodingUrl when the server provides one', async () => {
+      mockGetPostedPlaybackInfo.mockResolvedValue({
+        data: { PlaySessionId: 'sess-1', MediaSources: [{ Id: 'src-1', TranscodingUrl: '/live.m3u8', Path: '/raw/live.ts', SupportsDirectPlay: true }] },
+      });
+
+      const result = await negotiatePlayback('user-1', 'channel-1', { allowDirectPlayback: true });
+
+      expect(result).toEqual({
+        url: 'https://server.example.com/live.m3u8',
+        playMethod: PlayMethod.Transcode,
+        mediaSourceId: 'src-1',
+        playSessionId: 'sess-1',
+        mediaStreams: [],
+      });
+    });
+
+    it('falls back to a direct-stream Path when there is no TranscodingUrl', async () => {
+      mockGetPostedPlaybackInfo.mockResolvedValue({
+        data: { PlaySessionId: 'sess-1', MediaSources: [{ Id: 'src-1', Path: '/raw/live.m3u8', SupportsDirectStream: true }] },
+      });
+
+      const result = await negotiatePlayback('user-1', 'channel-1', { allowDirectPlayback: true });
+
+      expect(result).toEqual({
+        url: 'https://server.example.com/raw/live.m3u8',
+        playMethod: PlayMethod.DirectStream,
+        mediaSourceId: 'src-1',
+        playSessionId: 'sess-1',
+        mediaStreams: [],
+      });
+    });
+
+    it('falls back to a direct-play Path when only SupportsDirectPlay is set', async () => {
+      mockGetPostedPlaybackInfo.mockResolvedValue({
+        data: { MediaSources: [{ Id: 'src-1', Path: '/raw/live.m3u8', SupportsDirectPlay: true }] },
+      });
+
+      const result = await negotiatePlayback('user-1', 'channel-1', { allowDirectPlayback: true });
+
+      expect(result.playMethod).toBe(PlayMethod.DirectPlay);
+    });
+
+    it('uses an already-absolute Path as-is, without routing it through getUri', async () => {
+      mockGetPostedPlaybackInfo.mockResolvedValue({
+        data: { MediaSources: [{ Id: 'src-1', Path: 'http://tuner.example.com/live.m3u8', SupportsDirectStream: true }] },
+      });
+
+      const result = await negotiatePlayback('user-1', 'channel-1', { allowDirectPlayback: true });
+
+      expect(result.url).toBe('http://tuner.example.com/live.m3u8');
+      expect(mockGetUri).not.toHaveBeenCalled();
+    });
+
+    it('throws a diagnostic-carrying error when neither TranscodingUrl nor a direct Path is usable', async () => {
+      mockGetPostedPlaybackInfo.mockResolvedValue({ data: { MediaSources: [{ Id: 'src-1' }] } });
+
+      await expect(negotiatePlayback('user-1', 'channel-1', { allowDirectPlayback: true })).rejects.toThrow(/Path: none/);
+    });
+
+    it('does not fall back to Path when allowDirectPlayback is not set, even if the source has one', async () => {
+      mockGetPostedPlaybackInfo.mockResolvedValue({
+        data: { MediaSources: [{ Id: 'src-1', Path: '/raw/live.m3u8', SupportsDirectPlay: true }] },
+      });
+
+      await expect(negotiatePlayback('user-1', 'channel-1')).rejects.toThrow('Server did not return a playable stream URL');
+    });
+  });
+
   it('converts positionMs to StartTimeTicks when given, and omits it otherwise', async () => {
     mockGetPostedPlaybackInfo.mockResolvedValue({ data: { MediaSources: [{ Id: 's', TranscodingUrl: '/x' }] } });
 
