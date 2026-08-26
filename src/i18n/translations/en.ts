@@ -140,6 +140,12 @@ export const en = {
   'library.sort.dateAdded': 'Date Added',
   'library.sort.releaseDate': 'Release Date',
   'library.sort.rating': 'Rating',
+  'library.sort.direction.aToZ': 'A to Z',
+  'library.sort.direction.zToA': 'Z to A',
+  'library.sort.direction.newestFirst': 'Newest First',
+  'library.sort.direction.oldestFirst': 'Oldest First',
+  'library.sort.direction.highestFirst': 'Highest First',
+  'library.sort.direction.lowestFirst': 'Lowest First',
 
   // Home rows
   'home.continueWatching': 'Continue Watching',

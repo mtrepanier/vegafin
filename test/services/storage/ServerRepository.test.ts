@@ -336,6 +336,66 @@ describe('switchUser / consumePendingUserSwitchServerId', () => {
   });
 });
 
+describe('setLibrarySort', () => {
+  it('does nothing when nobody is signed in', async () => {
+    const listener = jest.fn();
+    serverRepository.subscribe(listener);
+
+    await serverRepository.setLibrarySort('lib-1', 'SortName', 'Ascending');
+
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it('saves the choice under the given key on the current user and persists it', async () => {
+    const server = makeServer();
+    const user = makeUser();
+    await serverRepository.changeUser(server, user);
+
+    await serverRepository.setLibrarySort('lib-1', 'DateCreated', 'Descending');
+
+    expect(serverRepository.getSnapshot()?.user.librarySort).toEqual({ 'lib-1': { sortBy: 'DateCreated', direction: 'Descending' } });
+    expect(serverRepository.listServers()[0].users[0].librarySort).toEqual({ 'lib-1': { sortBy: 'DateCreated', direction: 'Descending' } });
+    expect(AsyncStorage.setItem).toHaveBeenCalledWith('vegafin.servers.v1', expect.any(String));
+  });
+
+  it('keeps other keys already stored for the same user', async () => {
+    const server = makeServer();
+    const user = makeUser();
+    await serverRepository.changeUser(server, user);
+
+    await serverRepository.setLibrarySort('lib-1', 'SortName', 'Ascending');
+    await serverRepository.setLibrarySort('favorites', 'CommunityRating', 'Descending');
+
+    expect(serverRepository.getSnapshot()?.user.librarySort).toEqual({
+      'lib-1': { sortBy: 'SortName', direction: 'Ascending' },
+      favorites: { sortBy: 'CommunityRating', direction: 'Descending' },
+    });
+  });
+
+  it('overwrites a previous choice for the same key', async () => {
+    const server = makeServer();
+    const user = makeUser();
+    await serverRepository.changeUser(server, user);
+
+    await serverRepository.setLibrarySort('lib-1', 'SortName', 'Ascending');
+    await serverRepository.setLibrarySort('lib-1', 'PremiereDate', 'Descending');
+
+    expect(serverRepository.getSnapshot()?.user.librarySort).toEqual({ 'lib-1': { sortBy: 'PremiereDate', direction: 'Descending' } });
+  });
+
+  it('notifies subscribers', async () => {
+    const server = makeServer();
+    const user = makeUser();
+    await serverRepository.changeUser(server, user);
+    const listener = jest.fn();
+    serverRepository.subscribe(listener);
+
+    await serverRepository.setLibrarySort('lib-1', 'SortName', 'Ascending');
+
+    expect(listener).toHaveBeenCalled();
+  });
+});
+
 describe('subscribe', () => {
   it('stops notifying a listener after it unsubscribes', async () => {
     const listener = jest.fn();

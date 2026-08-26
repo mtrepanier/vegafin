@@ -1,46 +1,120 @@
-import React, { useCallback, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Pressable, StyleSheet, Text, View, type PressableStateCallbackType } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@amazon-devices/react-navigation__native';
+import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import { useTheme } from '../../theme/ThemeContext';
 import { layout } from '../../theme/types';
 import { useCurrentUser } from '../../services/storage/ServerRepositoryContext';
 import { useInfiniteItemList } from '../../services/jellyfin/ItemPager';
-import { fetchHomeRowPage, fetchLibraryPage, LIBRARY_SORT_OPTIONS, type LibrarySortField, type SortDirection } from '../../services/jellyfin/library';
+import { fetchHomeRowPage, fetchLibraryPage, resolveLibrarySort, LIBRARY_SORT_OPTIONS, type LibrarySortField, type SortDirection } from '../../services/jellyfin/library';
 import { primaryImageUrl } from '../../services/jellyfin/images';
+import { seriesUnwatchedCount } from '../../services/jellyfin/seriesBadge';
 import { ItemGrid } from '../../components/ItemGrid';
 import { PosterCard } from '../../components/cards/PosterCard';
 import { navigateToItem } from '../../navigation/navigateToItem';
 import { useT } from '../../i18n/useTranslation';
+import { serverRepository } from '../../services/storage/ServerRepository';
 import type { AppNavigationProp, DrawerParamList } from '../../navigation/types';
 
 const GRID_COLUMNS = 6;
 const LIST_COLUMNS = 1;
 
+export type LibrarySort = { sortBy: LibrarySortField; direction: SortDirection };
+
 interface LibraryGridProps {
   title: string;
   fetchPage: ReturnType<typeof fetchLibraryPage>;
-  sortable?: boolean;
+  /** Omitted entirely (not just a falsy value) for screens with nothing to sort - a fixed Home
+   * row's "see more" expansion (MoreHomeRowScreen) keeps whatever order the row itself already
+   * has, the same reason it never passed a `sortable` boolean before this component was
+   * rewritten to take the sort value itself instead of just a flag. */
+  sort?: LibrarySort;
   onSortChange?: (sortBy: LibrarySortField, direction: SortDirection) => void;
+}
+
+/** One field's two rows in the sort picker below - "A to Z"/"Z to A", not a field name plus a
+ * generic Ascending/Descending, so each row is a complete, directly-selectable choice on its
+ * own (see the SortPicker component's own comment for why this replaced a cycle-through-once
+ * toggle). */
+function SortPickerRow({ label, selected, hasTVPreferredFocus, onPress }: { label: string; selected: boolean; hasTVPreferredFocus?: boolean; onPress: () => void }) {
+  const { colors } = useTheme();
+  return (
+    <Pressable hasTVPreferredFocus={hasTVPreferredFocus} onPress={onPress}>
+      {({ focused }: PressableStateCallbackType) => {
+        const rowStyle = [
+          styles.sortPickerRow,
+          {
+            color: selected ? colors.primary : colors.onSurface,
+            backgroundColor: focused ? colors.primaryContainer : 'transparent',
+          },
+        ];
+        return (
+          <Text style={rowStyle}>
+            {selected ? '✓ ' : ''}
+            {label}
+          </Text>
+        );
+      }}
+    </Pressable>
+  );
+}
+
+/** Every sort field's both directions, laid out as directly-selectable rows grouped under a
+ * field heading each - replaces an earlier "click the sort button to cycle to the next option,
+ * always ascending" toggle, which needed as many presses as there were options (and couldn't
+ * reach descending at all) to land on the one you actually wanted. Mirrors PlaybackScreens.tsx's
+ * TrackPicker in shape (a floating panel, grouped headings + rows, a Close row rather than
+ * intercepting the remote's back button - see that component's own comment for why back doesn't
+ * close it either) without importing from it, since it's a different screen's overlay entirely. */
+function SortPicker({ current, onSelect, onClose }: { current: LibrarySort; onSelect: (sortBy: LibrarySortField, direction: SortDirection) => void; onClose: () => void }) {
+  const { colors } = useTheme();
+  const t = useT();
+  return (
+    <View style={[styles.sortPicker, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      {LIBRARY_SORT_OPTIONS.map((option) => (
+        <View key={option.value}>
+          <Text style={[styles.sortPickerHeading, { color: colors.onSurfaceVariant }]}>{t(option.labelKey)}</Text>
+          <SortPickerRow
+            label={t(option.direction.asc)}
+            selected={current.sortBy === option.value && current.direction === 'Ascending'}
+            hasTVPreferredFocus={current.sortBy === option.value && current.direction === 'Ascending'}
+            onPress={() => {
+              onSelect(option.value, 'Ascending');
+              onClose();
+            }}
+          />
+          <SortPickerRow
+            label={t(option.direction.desc)}
+            selected={current.sortBy === option.value && current.direction === 'Descending'}
+            hasTVPreferredFocus={current.sortBy === option.value && current.direction === 'Descending'}
+            onPress={() => {
+              onSelect(option.value, 'Descending');
+              onClose();
+            }}
+          />
+        </View>
+      ))}
+      <Pressable onPress={onClose} style={styles.sortPickerClose}>
+        <Text style={{ color: colors.primary }}>{t('common.close')}</Text>
+      </Pressable>
+    </View>
+  );
 }
 
 /** Shared grid body, reused by every library-browsing screen (this file's three plus
  * FavoritesScreen.tsx) - mirrors `CollectionFolderView.kt` / `ItemGrid.kt`, simplified per
  * navigation/types.ts's `ItemGrid`/`FilteredCollection` comment: sort + a grid/list toggle, no
  * persisted per-user view preferences (Phase 2 territory). */
-export function LibraryGrid({ title, fetchPage, sortable, onSortChange }: LibraryGridProps) {
+export function LibraryGrid({ title, fetchPage, sort, onSortChange }: LibraryGridProps) {
   const { colors } = useTheme();
   const t = useT();
   const navigation = useNavigation<AppNavigationProp<keyof DrawerParamList>>();
   const { items, loading, loadMore } = useInfiniteItemList(fetchPage);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
-  const [sortIndex, setSortIndex] = useState(0);
+  const [sortPickerOpen, setSortPickerOpen] = useState(false);
 
-  const cycleSort = () => {
-    const next = (sortIndex + 1) % LIBRARY_SORT_OPTIONS.length;
-    setSortIndex(next);
-    onSortChange?.(LIBRARY_SORT_OPTIONS[next].value, 'Ascending');
-  };
+  const currentSortOption = sort ? LIBRARY_SORT_OPTIONS.find((o) => o.value === sort.sortBy) : undefined;
 
   const numColumns = viewMode === 'grid' ? GRID_COLUMNS : LIST_COLUMNS;
   const metrics = viewMode === 'grid' ? layout.poster : layout.landscape;
@@ -50,11 +124,14 @@ export function LibraryGrid({ title, fetchPage, sortable, onSortChange }: Librar
       <View style={styles.toolbar}>
         <Text style={[styles.title, { color: colors.onBackground }]}>{title}</Text>
         <View style={styles.toolbarButtons}>
-          {sortable ? (
-            <Pressable onPress={cycleSort} style={[styles.toolbarButton, { borderColor: colors.border }]}>
-              <Text style={{ color: colors.onSurfaceVariant }}>
-                {t('library.sortPrefix', { label: t(LIBRARY_SORT_OPTIONS[sortIndex].labelKey) })}
-              </Text>
+          {sort && currentSortOption ? (
+            <Pressable onPress={() => setSortPickerOpen((v) => !v)} style={[styles.toolbarButton, { borderColor: colors.border }]}>
+              <Text style={{ color: colors.onSurfaceVariant }}>{t('library.sortPrefix', { label: t(currentSortOption.labelKey) })}</Text>
+              <Icon
+                name={sort.direction === 'Ascending' ? 'arrow-upward' : 'arrow-downward'}
+                size={14}
+                color={colors.onSurfaceVariant}
+              />
             </Pressable>
           ) : null}
           <Pressable
@@ -80,12 +157,16 @@ export function LibraryGrid({ title, fetchPage, sortable, onSortChange }: Librar
             watched={item.UserData?.Played ?? false}
             favorite={item.UserData?.IsFavorite ?? false}
             progressPercent={item.UserData?.PlayedPercentage ?? undefined}
+            unwatchedCount={seriesUnwatchedCount(item)}
             hasTVPreferredFocus={hasTVPreferredFocus}
             onFocus={onFocus}
             onPress={() => navigateToItem(navigation, item)}
           />
         )}
       />
+      {sortPickerOpen && sort ? (
+        <SortPicker current={sort} onSelect={(sortBy, direction) => onSortChange?.(sortBy, direction)} onClose={() => setSortPickerOpen(false)} />
+      ) : null}
     </View>
   );
 }
@@ -98,10 +179,23 @@ export function FilteredCollectionScreen() {
   const userId = currentUser?.user.id;
   const t = useT();
 
-  const [sort, setSort] = useState<{ sortBy: LibrarySortField; direction: SortDirection }>({
-    sortBy: LIBRARY_SORT_OPTIONS[0].value,
-    direction: 'Ascending',
-  });
+  // Also doubles as the key `serverRepository.setLibrarySort` remembers this grid's sort
+  // under, and the one `LibraryGrid` itself remounts on below - "which grid this is" is the
+  // same identity either way.
+  const sortKey = `${itemId}-${parentType}`;
+  const [sort, setSort] = useState(() => resolveLibrarySort(currentUser?.user.librarySort?.[sortKey]));
+  // React Navigation reuses this same screen instance across different FilteredCollection
+  // params rather than remounting it - navigating from one filtered collection to another
+  // updates route.params in place, so a lazy useState initializer alone (which only runs once,
+  // at first mount) never re-fires for the new collection. Without this effect, the sort picked
+  // for the *previous* collection kept being used as-is for whichever one you navigated to next,
+  // instead of restoring that collection's own remembered choice. `LibraryGrid`'s `key={sortKey}`
+  // below already remounts *its* own local state the same way; this is the parent-level
+  // equivalent for state that lives up here instead.
+  useEffect(() => {
+    setSort(resolveLibrarySort(currentUser?.user.librarySort?.[sortKey]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortKey]);
 
   const fetchPage = useCallback(
     (startIndex: number, limit: number) =>
@@ -123,11 +217,14 @@ export function FilteredCollectionScreen() {
   // this component instance and its scroll/focus state instead of starting fresh.
   return (
     <LibraryGrid
-      key={`${itemId}-${parentType}`}
+      key={sortKey}
       title={t('library.browse')}
       fetchPage={fetchPage}
-      sortable
-      onSortChange={(sortBy, direction) => setSort({ sortBy, direction })}
+      sort={sort}
+      onSortChange={(sortBy, direction) => {
+        setSort({ sortBy, direction });
+        serverRepository.setLibrarySort(sortKey, sortBy, direction);
+      }}
     />
   );
 }
@@ -140,10 +237,17 @@ export function ItemGridScreen() {
   const currentUser = useCurrentUser();
   const userId = currentUser?.user.id;
 
-  const [sort, setSort] = useState<{ sortBy: LibrarySortField; direction: SortDirection }>({
-    sortBy: LIBRARY_SORT_OPTIONS[0].value,
-    direction: 'Ascending',
-  });
+  // See FilteredCollectionScreen's own sortKey comment above - same dual role here.
+  const sortKey = `${parentId ?? ''}-${(includeItemTypes ?? []).join(',')}`;
+  const [sort, setSort] = useState(() => resolveLibrarySort(currentUser?.user.librarySort?.[sortKey]));
+  // Same reset-on-identity-change need as FilteredCollectionScreen above: clicking a different
+  // library in the side nav while already on this screen updates route.params on the *same*
+  // mounted instance rather than remounting it, so without this effect the sort just picked for
+  // the previous library kept being reused for whichever one you clicked next.
+  useEffect(() => {
+    setSort(resolveLibrarySort(currentUser?.user.librarySort?.[sortKey]));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sortKey]);
 
   const fetchPage = useCallback(
     (startIndex: number, limit: number) =>
@@ -162,11 +266,14 @@ export function ItemGridScreen() {
   }
   return (
     <LibraryGrid
-      key={`${parentId ?? ''}-${(includeItemTypes ?? []).join(',')}`}
+      key={sortKey}
       title={title}
       fetchPage={fetchPage}
-      sortable
-      onSortChange={(sortBy, direction) => setSort({ sortBy, direction })}
+      sort={sort}
+      onSortChange={(sortBy, direction) => {
+        setSort({ sortBy, direction });
+        serverRepository.setLibrarySort(sortKey, sortBy, direction);
+      }}
     />
   );
 }
@@ -206,6 +313,9 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   toolbarButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     borderWidth: 1,
     borderRadius: 6,
     paddingVertical: 6,
@@ -214,5 +324,32 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '700',
+  },
+  sortPicker: {
+    position: 'absolute',
+    top: 64,
+    right: layout.contentPadding,
+    minWidth: 240,
+    borderRadius: 8,
+    borderWidth: 1,
+    padding: 12,
+    gap: 4,
+  },
+  sortPickerHeading: {
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 8,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+  },
+  sortPickerRow: {
+    fontSize: 14,
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+  },
+  sortPickerClose: {
+    marginTop: 12,
+    alignSelf: 'flex-end',
   },
 });

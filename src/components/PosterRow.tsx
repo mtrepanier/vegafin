@@ -2,6 +2,7 @@ import React from 'react';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import { layout, type CardMetrics } from '../theme/types';
 import { primaryImageUrl } from '../services/jellyfin/images';
+import { seriesUnwatchedCount } from '../services/jellyfin/seriesBadge';
 import { navigateToItem } from '../navigation/navigateToItem';
 import type { AppNavigationProp, DrawerParamList } from '../navigation/types';
 import { ItemRow } from './ItemRow';
@@ -41,6 +42,7 @@ export function PosterRow({ title, items, navigation, metrics = layout.poster, a
           watched={item.UserData?.Played ?? false}
           favorite={item.UserData?.IsFavorite ?? false}
           progressPercent={item.UserData?.PlayedPercentage ?? undefined}
+          unwatchedCount={seriesUnwatchedCount(item)}
           hasTVPreferredFocus={hasTVPreferredFocus}
           onFocus={onFocus}
           onPress={() => navigateToItem(navigation, item)}

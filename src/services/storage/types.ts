@@ -20,6 +20,16 @@ export interface JellyfinUserPreferences {
   subtitleMode: SubtitleModePreference;
 }
 
+/** One remembered `{ field, direction }` sort choice - `sortBy` is a loose string, not
+ * `LibrarySortField` (`services/jellyfin/library.ts`), so this storage layer doesn't need to
+ * import a different feature area's types; the library screens validate it back against
+ * `LIBRARY_SORT_OPTIONS` when reading, falling back to the default for anything that doesn't
+ * match (a value from a since-removed sort option, for instance). */
+export interface LibrarySortPreference {
+  sortBy: string;
+  direction: 'Ascending' | 'Descending';
+}
+
 export interface JellyfinUser {
   id: string;
   name: string | null;
@@ -30,6 +40,13 @@ export interface JellyfinUser {
   lastUsed: string | null; // ISO 8601
   uiLanguage: string | null;
   appPreferences: JellyfinUserPreferences;
+  /** Per-library/collection remembered sort, keyed by whatever opaque context string the
+   * screen that set it uses to identify "which grid this is" (`LibraryScreens.tsx` reuses the
+   * same key it already keys each grid's own React `key` prop with). Optional, not defaulted to
+   * `{}` in `ServerRepository.newUser()` the way `appPreferences` is - every read already goes
+   * through an `?.[key] ?? default` fallback, so there's no missing-field case to actually
+   * guard against by forcing it to exist upfront. */
+  librarySort?: Record<string, LibrarySortPreference>;
 }
 
 export interface JellyfinServerUsers {

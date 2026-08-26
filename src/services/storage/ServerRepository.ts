@@ -158,6 +158,26 @@ class ServerRepository {
     return this.changeUser(entry.server, user);
   }
 
+  /** Remembers a library-screen sort choice against the currently signed-in user's own
+   * persisted record, scoped by an opaque `contextKey` the caller picks - this repository
+   * doesn't need to understand what "a library" means, just store one value per key. A no-op
+   * if nobody is signed in (shouldn't happen in practice - every screen that calls this already
+   * requires a signed-in `userId` to render at all - but cheaper to guard than to assume). */
+  async setLibrarySort(contextKey: string, sortBy: string, direction: 'Ascending' | 'Descending'): Promise<void> {
+    if (!this.current) {
+      return;
+    }
+    const { server, user } = this.current;
+    const updatedUser: JellyfinUser = {
+      ...user,
+      librarySort: { ...user.librarySort, [contextKey]: { sortBy, direction } },
+    };
+    const savedUser = this.upsertUser(server.id, updatedUser);
+    await this.persistServers();
+    this.current = { server, user: savedUser };
+    this.notify();
+  }
+
   async removeUser(user: JellyfinUser): Promise<void> {
     if (this.current?.user.id === user.id) {
       this.current = null;
