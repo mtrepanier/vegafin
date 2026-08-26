@@ -1,0 +1,75 @@
+name: Prepare Release
+
+# Manually triggered - bumps package.json/package-lock.json + manifest.toml's version together
+# and opens a PR for it, rather than pushing straight to main. That's not just a cautious
+# choice: .github/rulesets/protect-main.json requires signed commits on main
+# (`required_signatures`) and a passing `test` status check, and a plain `git push` from this
+# runner would produce an unsigned commit the ruleset would reject outright. Merging a PR
+# through GitHub's own merge button/API produces a GitHub-signed merge commit automatically,
+# which is what actually satisfies that rule - this workflow only ever pushes to its own
+# release/vX.Y.Z branch, never to main directly.
+#
+# This only prepares the version bump. It does not build or upload anything to the Amazon
+# Appstore - the Vega SDK toolchain isn't available on a GitHub-hosted runner (see
+# DEVELOPER.md's Testing section), so that part stays a local, manual step. Once this PR is
+# merged, tag-release.yml takes over and creates the git tag + GitHub Release automatically.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version bump type'
+        required: true
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Just needs a node/npm binary on the runner - not the full dependency tree, since this
+      # only edits package.json/package-lock.json/manifest.toml's version fields directly.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # --no-git-tag-version: this workflow controls the tag itself (see tag-release.yml),
+      # created once the version bump actually lands on main, not here on a throwaway branch.
+      - name: Bump package.json version
+        id: bump
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          npm version "$BUMP" --no-git-tag-version
+          echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      # package.json and manifest.toml's [package] version are two separate fields that don't
+      # sync themselves - manifest.toml's is the one that actually ships in the .vpkg and shows
+      # in the store listing, so it has to move in lockstep with package.json's.
+      - name: Sync manifest.toml version
+        env:
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: sed -i "s/^version = \".*\"/version = \"$VERSION\"/" manifest.toml
+
+      - name: Open release PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.bump.outputs.version }}
+        run: |
+          BRANCH="release/v$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add package.json package-lock.json manifest.toml
+          git commit -m "Bump version to $VERSION"
+          git push origin "$BRANCH"
+          gh pr create --base main --head "$BRANCH" \
+            --title "Release v$VERSION" \
+            --body "Automated version bump to \`$VERSION\` (package.json + manifest.toml). Merging this will tag \`v$VERSION\` and publish a GitHub Release with auto-generated notes - see tag-release.yml. Does not build or submit to the Amazon Appstore; that's still a manual step after this merges."
