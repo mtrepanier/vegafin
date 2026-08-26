@@ -60,6 +60,11 @@ export const fr: Record<TranslationKey, string> = {
   'settings.showNextUp.duringCredits': 'Pendant le générique',
   'settings.showNextUp.never': 'Jamais',
   'settings.autoPlayNextUp': 'Lecture automatique du suivant',
+  'settings.skipIntro': "Passer l'intro",
+  'settings.skipOutro': 'Passer le générique',
+  'settings.skipSegment.ask': 'Demander',
+  'settings.skipSegment.auto': 'Passer automatiquement',
+  'settings.skipSegment.off': 'Désactivé',
   'settings.interfaceLanguage': "Langue de l'interface",
   'settings.language.system': "Langue de l'appareil",
   'settings.language.en': 'English',
@@ -100,6 +105,8 @@ export const fr: Record<TranslationKey, string> = {
   'player.streamEngineError': 'Erreur du moteur de diffusion {code} (catégorie {category})',
   'player.playNow': 'Lire maintenant',
   'player.nextUpCountdown': 'Lecture dans {seconds} s',
+  'player.skipIntro': "Passer l'intro",
+  'player.skipOutro': 'Passer le générique',
 
   // Setup / sign-in
   'setup.addServer': 'Ajouter un serveur Jellyfin',

@@ -65,6 +65,11 @@ export const en = {
   'settings.showNextUp.duringCredits': 'During End Credits',
   'settings.showNextUp.never': 'Never',
   'settings.autoPlayNextUp': 'Auto Play Next Up',
+  'settings.skipIntro': 'Skip Intro',
+  'settings.skipOutro': 'Skip Outro',
+  'settings.skipSegment.ask': 'Ask',
+  'settings.skipSegment.auto': 'Auto-Skip',
+  'settings.skipSegment.off': 'Off',
   'settings.interfaceLanguage': 'Interface Language',
   'settings.language.system': 'Device Default',
   'settings.language.en': 'English',
@@ -102,6 +107,8 @@ export const en = {
   'player.streamEngineError': 'Stream engine error {code} (category {category})',
   'player.playNow': 'Play Now',
   'player.nextUpCountdown': 'Playing in {seconds}s',
+  'player.skipIntro': 'Skip Intro',
+  'player.skipOutro': 'Skip Outro',
 
   // Setup / sign-in
   'setup.addServer': 'Add a Jellyfin server',

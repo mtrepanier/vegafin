@@ -4,7 +4,7 @@ import { useTheme } from '../../theme/ThemeContext';
 import { layout } from '../../theme/types';
 import { useAppSettings } from '../../services/storage/AppSettingsContext';
 import { appSettingsRepository } from '../../services/storage/AppSettingsRepository';
-import type { ShowNextUpTiming, ThemeMusicVolume, UiLanguage } from '../../services/storage/types';
+import type { ShowNextUpTiming, SkipSegmentBehavior, ThemeMusicVolume, UiLanguage } from '../../services/storage/types';
 import { useT } from '../../i18n/useTranslation';
 import type { TFunction } from '../../i18n/useTranslation';
 import { SettingsSection } from './SettingsSection';
@@ -28,6 +28,14 @@ function showNextUpOptions(t: TFunction): StepperOption<ShowNextUpTiming>[] {
     { value: 'atEnd', label: t('settings.showNextUp.atEnd') },
     { value: 'duringCredits', label: t('settings.showNextUp.duringCredits') },
     { value: 'never', label: t('settings.showNextUp.never') },
+  ];
+}
+
+function skipSegmentOptions(t: TFunction): StepperOption<SkipSegmentBehavior>[] {
+  return [
+    { value: 'ask', label: t('settings.skipSegment.ask') },
+    { value: 'auto', label: t('settings.skipSegment.auto') },
+    { value: 'off', label: t('settings.skipSegment.off') },
   ];
 }
 
@@ -110,6 +118,18 @@ export function SettingsScreen() {
           label={t('settings.autoPlayNextUp')}
           value={settings.autoPlayNextUp}
           onChange={(v) => appSettingsRepository.update({ autoPlayNextUp: v })}
+        />
+        <SettingsStepper
+          label={t('settings.skipIntro')}
+          value={settings.skipIntro}
+          options={skipSegmentOptions(t)}
+          onChange={(v) => appSettingsRepository.update({ skipIntro: v })}
+        />
+        <SettingsStepper
+          label={t('settings.skipOutro')}
+          value={settings.skipOutro}
+          options={skipSegmentOptions(t)}
+          onChange={(v) => appSettingsRepository.update({ skipOutro: v })}
         />
       </SettingsSection>
 

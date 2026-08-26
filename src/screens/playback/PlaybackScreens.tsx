@@ -6,11 +6,14 @@ import { KeplerVideoSurfaceView, VideoPlayer } from '@amazon-devices/react-nativ
 import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
 import { MediaStreamType } from '@jellyfin/sdk/lib/generated-client/models/media-stream-type';
 import { BaseItemKind } from '@jellyfin/sdk/lib/generated-client/models/base-item-kind';
+import { MediaSegmentType } from '@jellyfin/sdk/lib/generated-client/models/media-segment-type';
 import type { MediaStream } from '@jellyfin/sdk/lib/generated-client/models/media-stream';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
+import type { MediaSegmentDto } from '@jellyfin/sdk/lib/generated-client/models/media-segment-dto';
 import { useTheme } from '../../theme/ThemeContext';
 import { useCurrentUser } from '../../services/storage/ServerRepositoryContext';
 import { useAppSettings } from '../../services/storage/AppSettingsContext';
+import type { SkipSegmentBehavior } from '../../services/storage/types';
 import { useT } from '../../i18n/useTranslation';
 import { fetchItem, fetchPlaylistItems } from '../../services/jellyfin/detail';
 import {
@@ -19,11 +22,14 @@ import {
   reportPlaybackStart,
   reportPlaybackStopped,
   fetchNextUpEpisode,
+  fetchMediaSegments,
   type PlaybackSource,
 } from '../../services/jellyfin/playback';
+import { msToTicks, ticksToMs } from '../../util/format';
 import { unloadPlayer } from '../../w3cmedia/playerLifecycle';
 import { ShakaPlayer } from '../../w3cmedia/shakaplayer/ShakaPlayer';
 import { NextUpCard } from './NextUpCard';
+import { SkipSegmentButton } from './SkipSegmentButton';
 import type { RootStackParamList } from '../../navigation/types';
 
 const PROGRESS_REPORT_INTERVAL_MS = 5000;
@@ -32,15 +38,29 @@ const PROGRESS_REPORT_INTERVAL_MS = 5000;
  * De-duping on the normalized type within this window collapses that back to one action. */
 const KEY_EVENT_DEDUPE_MS = 350;
 const SHAKA_LOAD_TIMEOUT_MS = 20000;
+/** The remote's dedicated FF/RW buttons (not the D-pad left/right arrows, which stay
+ * single-skip-only) - hold-to-accelerate. A single physical press is confirmed (see
+ * KEY_EVENT_DEDUPE_MS above) to always deliver exactly its own down+up pair - never more -
+ * so a 3rd same-direction event without a release gap in between can only mean the button is
+ * still physically held (native key-repeat), not a second click; that's the signal this waits
+ * for before escalating into a repeating, accelerating seek. Reuses KEY_EVENT_DEDUPE_MS's own
+ * value as the release-gap, rather than a second tuned constant, since it's the same underlying
+ * platform behavior being measured either way. */
+const SEEK_HOLD_MIN_EVENTS_TO_RAMP = 3;
+const SEEK_HOLD_TICK_MS = 400;
+/** Each tick's seek multiplier doubles every this many ticks, capped below. */
+const SEEK_HOLD_RAMP_TICKS = 3;
+const SEEK_HOLD_MAX_MULTIPLIER = 8;
 // Skip-seconds and the controls auto-hide delay used to be fixed here (30/10/5) - now read
 // from AppSettings (Settings screen's Playback section) instead, with defaultAppSettings()
 // carrying forward these exact same numbers so nobody's actual playback behavior changed the
 // day that setting screen was added.
 
 /** How many seconds of remaining playback trigger the Next Up card for each `showNextUp`
- * setting. There's no real chapter/credits-marker data available (Jellyfin's MediaSegments API,
- * which has an actual `Outro` marker type, isn't integrated in this app) - "duringCredits" is a
- * fixed, longer window standing in for real credits detection, not literal credits timing. */
+ * setting. Deliberately not wired to the MediaSegments `Outro` marker fetched below for Skip
+ * Outro - not every item has outro segment data (it depends on the server-side Intro Skipper
+ * plugin having scanned it), so Next Up needs a timing source that always works; "duringCredits"
+ * is a fixed, longer window standing in for real credits detection, not literal credits timing. */
 const NEXT_UP_THRESHOLD_SEC: Record<'atEnd' | 'duringCredits', number> = {
   atEnd: 15,
   duringCredits: 60,
@@ -100,7 +120,7 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit, enableNextUp
   const currentUser = useCurrentUser();
   const userId = currentUser?.user.id;
   const keplerAppStateManager = useKeplerAppStateManager();
-  const { hideControlsAfterSec, skipForwardSec, skipBackwardSec, showNextUp, autoPlayNextUp } = useAppSettings();
+  const { hideControlsAfterSec, skipForwardSec, skipBackwardSec, showNextUp, autoPlayNextUp, skipIntro, skipOutro } = useAppSettings();
   const t = useT();
 
   const [item, setItem] = useState<BaseItemDto | null>(null);
@@ -207,6 +227,59 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit, enableNextUp
   const remainingSec = durationSec > 0 ? durationSec - positionSec : Infinity;
   const nextUpVisible =
     !!nextUpItem && !nextUpDismissed && nextUpThresholdSec != null && (ended || remainingSec <= nextUpThresholdSec);
+
+  // Intro/outro skip markers from the server's Intro Skipper plugin data (MediaSegments API) -
+  // fetched by itemId alone, not gated on `item` resolving first the way nextUpItem is, since
+  // it doesn't need any of that item's own fields. Empty for anything the plugin hasn't scanned,
+  // which the UI below treats the same as "no segments" rather than an error.
+  const [segments, setSegments] = useState<MediaSegmentDto[]>([]);
+  useEffect(() => {
+    setSegments([]);
+    let cancelled = false;
+    fetchMediaSegments(itemId).then((items) => {
+      if (!cancelled) setSegments(items);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [itemId]);
+
+  const activeSegment = useMemo(() => {
+    const positionTicks = msToTicks(positionSec * 1000);
+    return (
+      segments.find(
+        (s) => s.StartTicks != null && s.EndTicks != null && positionTicks >= s.StartTicks && positionTicks < s.EndTicks,
+      ) ?? null
+    );
+  }, [segments, positionSec]);
+
+  const behaviorForSegment = useCallback(
+    (type: MediaSegmentType | undefined): SkipSegmentBehavior => {
+      if (type === MediaSegmentType.Intro) return skipIntro;
+      if (type === MediaSegmentType.Outro) return skipOutro;
+      return 'off';
+    },
+    [skipIntro, skipOutro],
+  );
+
+  // Segment ids already auto-skipped or explicitly skipped via the button - guards both paths
+  // against re-firing on every position tick while still inside the same segment (auto-skip is
+  // asynchronous, so several timeupdate ticks can land inside [start, end) before the seek
+  // actually lands). Doesn't need to be state: nothing needs to re-render off this changing on
+  // its own, since the seek that follows already drives positionSec/activeSegment forward.
+  const skippedSegmentIdsRef = useRef(new Set<string>());
+  // Set on an explicit back-button dismiss (see handleTVEvent) to hide the Ask button for that
+  // one segment without seeking - unlike the ref above, this does need to be state, since
+  // nothing else about position/segments changes to trigger the re-render that hiding it needs.
+  const [dismissedSegmentId, setDismissedSegmentId] = useState<string | null>(null);
+
+  const skipBehavior = activeSegment ? behaviorForSegment(activeSegment.Type) : 'off';
+  const skipButtonVisible =
+    !!activeSegment?.Id &&
+    skipBehavior === 'ask' &&
+    activeSegment.Id !== dismissedSegmentId &&
+    !skippedSegmentIdsRef.current.has(activeSegment.Id) &&
+    !nextUpVisible;
 
   const playNextUp = useCallback(() => {
     if (nextUpItem) {
@@ -627,10 +700,9 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit, enableNextUp
   // AmbientFlare/astra-tv (a separate Jellyfin-for-Vega client tested on real Fire TV
   // hardware) - also reports the new position immediately rather than waiting for the next
   // 'timeupdate' tick, which can lag visibly during HLS rebuffering.
-  const seekBy = useCallback((activePlayer: VideoPlayer, deltaSeconds: number) => {
+  const seekTo = useCallback((activePlayer: VideoPlayer, targetSeconds: number) => {
     const duration = typeof activePlayer.duration === 'number' && Number.isFinite(activePlayer.duration) ? activePlayer.duration : 0;
-    const raw = activePlayer.currentTime + deltaSeconds;
-    const target = Math.max(0, duration > 0 ? Math.min(duration, raw) : raw);
+    const target = Math.max(0, duration > 0 ? Math.min(duration, targetSeconds) : targetSeconds);
     const seekable = activePlayer as VideoPlayer & { fastSeek?: (time: number) => void };
     if (typeof seekable.fastSeek === 'function') {
       seekable.fastSeek(target);
@@ -640,6 +712,101 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit, enableNextUp
     positionMsRef.current = Math.round(target * 1000);
     setPositionSec(target);
   }, []);
+
+  const seekBy = useCallback(
+    (activePlayer: VideoPlayer, deltaSeconds: number) => seekTo(activePlayer, activePlayer.currentTime + deltaSeconds),
+    [seekTo],
+  );
+
+  // Tracks an in-progress FF/RW button hold - see SEEK_HOLD_MIN_EVENTS_TO_RAMP's own comment
+  // for the detection strategy. Not component state: nothing here needs to trigger a re-render,
+  // only to drive imperative seekBy calls on a timer.
+  const seekHoldRef = useRef<{
+    direction: 'forward' | 'backward';
+    eventCount: number;
+    tick: number;
+    intervalId: ReturnType<typeof setInterval> | null;
+    releaseTimer: ReturnType<typeof setTimeout>;
+  } | null>(null);
+
+  const clearSeekHold = useCallback(() => {
+    const state = seekHoldRef.current;
+    if (!state) return;
+    if (state.intervalId) clearInterval(state.intervalId);
+    clearTimeout(state.releaseTimer);
+    seekHoldRef.current = null;
+  }, []);
+
+  useEffect(() => clearSeekHold, [clearSeekHold]);
+
+  // Called for every raw forward/rewind event, not deduped the way every other key is - telling
+  // a held button apart from a quick tap needs to see every repeat event, not just the first of
+  // a collapsed pair.
+  const handleSeekHoldEvent = useCallback(
+    (direction: 'forward' | 'backward') => {
+      const activePlayer = playerRef.current;
+      if (!activePlayer) return;
+      const baseSeconds = direction === 'forward' ? skipForwardSec : -skipBackwardSec;
+
+      let state = seekHoldRef.current;
+      if (!state || state.direction !== direction) {
+        // A fresh press (or a direction reversal mid-hold) - "click once" always fires this
+        // single skip immediately, matching the D-pad arrow's own behavior, regardless of
+        // whether this turns out to be a tap or the start of a hold.
+        clearSeekHold();
+        seekBy(activePlayer, baseSeconds);
+        seekHoldRef.current = state = {
+          direction,
+          eventCount: 1,
+          tick: 0,
+          intervalId: null,
+          releaseTimer: setTimeout(clearSeekHold, KEY_EVENT_DEDUPE_MS),
+        };
+        return;
+      }
+
+      state.eventCount += 1;
+      clearTimeout(state.releaseTimer);
+      state.releaseTimer = setTimeout(clearSeekHold, KEY_EVENT_DEDUPE_MS);
+
+      if (state.eventCount >= SEEK_HOLD_MIN_EVENTS_TO_RAMP && !state.intervalId) {
+        state.intervalId = setInterval(() => {
+          const player = playerRef.current;
+          const current = seekHoldRef.current;
+          if (!player || !current) return;
+          current.tick += 1;
+          const multiplier = Math.min(2 ** Math.floor(current.tick / SEEK_HOLD_RAMP_TICKS), SEEK_HOLD_MAX_MULTIPLIER);
+          seekBy(player, baseSeconds * multiplier);
+        }, SEEK_HOLD_TICK_MS);
+      }
+    },
+    [skipForwardSec, skipBackwardSec, seekBy, clearSeekHold],
+  );
+
+  // Shared by both the "Ask" button and the "Auto-Skip" effect below it - each just decides
+  // *when* to call this, not how the seek itself happens.
+  const skipSegment = useCallback(
+    (segment: MediaSegmentDto) => {
+      if (!segment.Id) return;
+      skippedSegmentIdsRef.current.add(segment.Id);
+      const activePlayer = playerRef.current;
+      if (activePlayer && segment.EndTicks != null) {
+        seekTo(activePlayer, ticksToMs(segment.EndTicks) / 1000);
+      }
+    },
+    [seekTo],
+  );
+
+  // Auto-Skip: seeks past the segment the moment it's entered, no prompt. Only depends on
+  // `activeSegment` changing (a new id, or null) - not on every positionSec tick within the same
+  // segment, since skippedSegmentIdsRef already guards re-entry there and re-running this per
+  // tick would otherwise fight a manual rewind back into an already-skipped segment.
+  useEffect(() => {
+    if (!activeSegment?.Id || skippedSegmentIdsRef.current.has(activeSegment.Id)) return;
+    if (behaviorForSegment(activeSegment.Type) !== 'auto') return;
+    skipSegment(activeSegment);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSegment?.Id]);
 
   // KeplerVideoSurfaceView renders no controls of its own, so all remote input - play/pause,
   // skip forward/back, and the D-pad - is driven from raw TV key events here. Reads playerRef
@@ -653,6 +820,23 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit, enableNextUp
         return;
       }
       const type = (event.eventType ?? '').replace(/_up$/, '');
+
+      // Bypasses the generic click dedupe below entirely - see handleSeekHoldEvent/
+      // SEEK_HOLD_MIN_EVENTS_TO_RAMP's own comments for why these two need every raw event,
+      // not just the first of a collapsed down+up pair. The D-pad's own left/right arrows are
+      // deliberately not part of this - they stay single-skip-only, matching the request that
+      // asked for hold-to-accelerate on the remote's dedicated FF/RW buttons specifically.
+      if (type === 'forward' || type === 'skip_forward') {
+        revealControls(!pickerOpen);
+        handleSeekHoldEvent('forward');
+        return;
+      }
+      if (type === 'rewind' || type === 'skip_backward') {
+        revealControls(!pickerOpen);
+        handleSeekHoldEvent('backward');
+        return;
+      }
+
       const now = Date.now();
       if (lastKeyEventRef.current.type === type && now - lastKeyEventRef.current.time < KEY_EVENT_DEDUPE_MS) {
         return;
@@ -665,11 +849,15 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit, enableNextUp
 
       switch (type) {
         case 'back':
-          // Dismiss the Next Up card instead of exiting playback, matching the "back cancels
-          // the upcoming transition" convention other TV players use - the video itself is
-          // still playing (or already ended) behind it either way.
+          // Dismiss whichever overlay is up instead of exiting playback, matching the "back
+          // cancels the overlay" convention other TV players use - the video itself is still
+          // playing (or already ended) behind it either way. Next Up takes priority since seeing
+          // it means the current item is basically over regardless of what's happening with a
+          // segment.
           if (nextUpVisible) {
             setNextUpDismissed(true);
+          } else if (skipButtonVisible && activeSegment?.Id) {
+            setDismissedSegmentId(activeSegment.Id);
           } else {
             onExit();
           }
@@ -689,20 +877,27 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit, enableNextUp
           }
           break;
         case 'right':
-        case 'forward':
-        case 'skip_forward':
           seekBy(activePlayer, skipForwardSec);
           break;
         case 'left':
-        case 'rewind':
-        case 'skip_backward':
           seekBy(activePlayer, -skipBackwardSec);
           break;
         default:
           break;
       }
     },
-    [onExit, seekBy, revealControls, pickerOpen, skipForwardSec, skipBackwardSec, nextUpVisible],
+    [
+      onExit,
+      seekBy,
+      revealControls,
+      pickerOpen,
+      skipForwardSec,
+      skipBackwardSec,
+      nextUpVisible,
+      skipButtonVisible,
+      activeSegment,
+      handleSeekHoldEvent,
+    ],
   );
   useTVEventHandler(handleTVEvent);
 
@@ -835,6 +1030,11 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit, enableNextUp
           countdownSec={nextUpCountdown}
           onPlay={playNextUp}
           onDismiss={() => setNextUpDismissed(true)}
+        />
+      ) : skipButtonVisible && activeSegment ? (
+        <SkipSegmentButton
+          type={activeSegment.Type === MediaSegmentType.Outro ? 'outro' : 'intro'}
+          onPress={() => skipSegment(activeSegment)}
         />
       ) : null}
     </View>

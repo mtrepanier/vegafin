@@ -52,6 +52,9 @@ export const defaultUserPreferences = (): JellyfinUserPreferences => ({
 
 export type ThemeMusicVolume = 'disabled' | 'low' | 'medium' | 'high' | 'full';
 export type ShowNextUpTiming = 'atEnd' | 'duringCredits' | 'never';
+/** 'ask' shows a Skip button while the segment plays; 'auto' seeks past it with no prompt;
+ * 'off' ignores the server's media segment data entirely for that type. */
+export type SkipSegmentBehavior = 'ask' | 'auto' | 'off';
 
 /**
  * `'system'` follows the device's own locale (`src/i18n/useSystemLocale.ts`) rather than
@@ -77,6 +80,8 @@ export interface AppSettings {
   skipBackwardSec: number;
   showNextUp: ShowNextUpTiming;
   autoPlayNextUp: boolean;
+  skipIntro: SkipSegmentBehavior;
+  skipOutro: SkipSegmentBehavior;
   uiLanguage: UiLanguage;
 }
 
@@ -91,5 +96,10 @@ export const defaultAppSettings = (): AppSettings => ({
   skipBackwardSec: 10,
   showNextUp: 'duringCredits',
   autoPlayNextUp: true,
+  // 'ask' rather than 'auto' by default - unlike Next Up (which is opt-out-feeling and easy to
+  // reverse with a Play Now tap), silently seeking playback without any prompt the first time a
+  // user sees it reads as broken/laggy rather than a feature.
+  skipIntro: 'ask',
+  skipOutro: 'ask',
   uiLanguage: 'system',
 });
