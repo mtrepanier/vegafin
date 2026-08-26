@@ -1,10 +1,13 @@
 name: Tag Release
 
-# Runs whenever package.json changes on main - which in practice means a Prepare Release PR
-# (prepare-release.yml) just merged. Tags the new version and publishes a GitHub Release with
-# auto-generated notes (from merged PR titles since the last release), but only if that version
-# isn't already tagged - so this is safe to trigger on any package.json change on main, not just
-# ones this workflow itself caused, without ever double-tagging the same version.
+# Runs whenever package.json changes on main - which in practice usually means a Prepare
+# Release PR (prepare-release.yml) just merged, but package.json can change on main for other
+# reasons too (any edit to it, even unrelated to the version field - confirmed the hard way:
+# merging this very automation's own PR added an npm script to package.json, which was enough
+# to fire this workflow and tag v0.0.1, a version that was never actually bumped). So this only
+# actually tags/releases when the version field *itself* changed since the immediately-prior
+# commit on main (github.event.before) *and* that version isn't already tagged - either
+# condition failing means skip, not just the tag-existence check alone.
 #
 # Pushing a tag isn't subject to .github/rulesets/protect-main.json's required_signatures rule -
 # that ruleset targets the main branch ref specifically, not tag refs - so this can push directly
@@ -37,19 +40,33 @@ jobs:
         with:
           node-version: 22
 
-      - name: Check whether this version is already tagged
+      - name: Check whether the version actually changed and isn't already tagged
         id: check
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
           VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
-            echo "already_tagged=true" >> "$GITHUB_OUTPUT"
+
+          PREV_VERSION=""
+          if git cat-file -e "$BEFORE_SHA:package.json" 2>/dev/null; then
+            git show "$BEFORE_SHA:package.json" > /tmp/prev-package.json
+            PREV_VERSION=$(node -p "require('/tmp/prev-package.json').version" 2>/dev/null || echo "")
+          fi
+
+          if [ "$VERSION" == "$PREV_VERSION" ]; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "Version field unchanged ($VERSION vs previous $PREV_VERSION) - this push touched package.json for some other reason. Skipping."
+          elif git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "Version $VERSION changed, but v$VERSION is already tagged. Skipping."
           else
-            echo "already_tagged=false" >> "$GITHUB_OUTPUT"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "Version changed from $PREV_VERSION to $VERSION and isn't tagged yet - proceeding."
           fi
 
       - name: Tag and create GitHub Release
-        if: steps.check.outputs.already_tagged == 'false'
+        if: steps.check.outputs.should_release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.check.outputs.version }}
@@ -63,7 +80,7 @@ jobs:
       # without leaving the source tree and for pasting into an Amazon Appstore "what's new"
       # field at submission time.
       - name: Open CHANGELOG.md update PR
-        if: steps.check.outputs.already_tagged == 'false'
+        if: steps.check.outputs.should_release == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.check.outputs.version }}
