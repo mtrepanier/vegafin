@@ -3,6 +3,7 @@
   "version": "0.1.1",
   "private": true,
   "description": "VegaFin - a Jellyfin TV client for Amazon Vega OS",
+  "license": "MIT",
   "scripts": {
     "clean": "rm -rf node_modules buildinfo.json dist build",
     "postinstall": "patch-package",

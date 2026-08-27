@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VegaFin Privacy Policy</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --fg: #1a1a1a;
+    --muted: #555555;
+    --accent: #6d28d9;
+    --border: #e5e5e5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14121a;
+      --fg: #f0eef5;
+      --muted: #b8b3c4;
+      --accent: #b794f6;
+      --border: #2c2836;
+    }
+  }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem 4rem;
+    line-height: 1.6;
+  }
+  h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+  .effective-date { color: var(--muted); font-size: 0.9rem; margin-bottom: 2rem; }
+  h2 { font-size: 1.2rem; margin-top: 2rem; border-bottom: 1px solid var(--border); padding-bottom: 0.4rem; }
+  a { color: var(--accent); }
+  ul { padding-left: 1.3rem; }
+  li { margin-bottom: 0.4rem; }
+</style>
+</head>
+<body>
+  <h1>VegaFin Privacy Policy</h1>
+  <p class="effective-date">Effective: August 27, 2026</p>
+
+  <p>
+    VegaFin is a client application for <a href="https://jellyfin.org">Jellyfin</a>, an
+    open-source media server. VegaFin does not operate any server, backend, or cloud service of
+    its own. This page explains what information VegaFin handles and where it goes.
+  </p>
+
+  <h2>What VegaFin sends, and to whom</h2>
+  <p>
+    When you add a server in VegaFin, the server address and the sign-in credentials you enter
+    (username/password, or an access token) are sent directly from your device to
+    <strong>the Jellyfin server you specify</strong> - a server you or someone you trust runs and
+    controls. VegaFin's developer does not operate that server, and does not receive, see, or
+    have access to your credentials, your library, or your watch activity.
+  </p>
+
+  <h2>What VegaFin stores on your device</h2>
+  <p>Locally, on your own device only, VegaFin stores:</p>
+  <ul>
+    <li>The Jellyfin server address(es) you've added and the access token(s) issued to you by
+      that server (used to keep you signed in without re-entering your password).</li>
+    <li>App preferences, such as your selected language and playback settings.</li>
+  </ul>
+  <p>
+    None of this is transmitted anywhere other than to the Jellyfin server it belongs to. Removing
+    a server or user from VegaFin removes this data from your device.
+  </p>
+
+  <h2>Analytics, tracking, and advertising</h2>
+  <p>
+    VegaFin does not include analytics, telemetry, crash-reporting, or advertising software of any
+    kind, and does not share any information with third parties.
+  </p>
+
+  <h2>Your Jellyfin server's own practices</h2>
+  <p>
+    The media library, artwork, and playback data you see in VegaFin come from the Jellyfin server
+    you connect to. That server is operated independently - by you, or by whoever you obtained
+    access from - and this policy does not cover its practices. Check with that server's operator
+    for how it handles your data.
+  </p>
+
+  <h2>Children's privacy</h2>
+  <p>
+    VegaFin is not directed at children and does not knowingly collect personal information from
+    children.
+  </p>
+
+  <h2>Changes to this policy</h2>
+  <p>
+    If this policy changes, the update will be reflected on this page with a new effective date.
+  </p>
+
+  <h2>Contact</h2>
+  <p>
+    Questions about this policy can be raised via
+    <a href="https://github.com/mtrepanier/vegafin/issues">VegaFin's GitHub issue tracker</a>.
+  </p>
+</body>
+</html>

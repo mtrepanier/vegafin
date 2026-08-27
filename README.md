@@ -15,6 +15,9 @@ platform behind the newest Fire TV and Fire Stick devices. Point it at your own 
 server and browse, search, and watch your movies, TV shows, and live TV, right from your TV's
 remote.
 
+> VegaFin is an independent, unofficial project. It is not affiliated with, endorsed by, or
+> sponsored by Jellyfin or Amazon.
+
 ## Features
 
 - **Movies & TV Shows** — browse your libraries with a fast, focus-driven interface built
@@ -36,8 +39,8 @@ remote.
 
 ## Getting VegaFin
 
-VegaFin is currently in active development and testing. It isn't yet published on the Amazon
-Appstore — once it is, a link will go here.
+VegaFin is currently under review for the Amazon Appstore — once it's published, a link will go
+here.
 
 In the meantime, you'll need:
 
@@ -55,3 +58,11 @@ lives in **[DEVELOPER.md](DEVELOPER.md)**.
 VegaFin is inspired by [Wholphin](https://github.com/damontecres/Wholphin), an Android TV
 Jellyfin client, though it's an independent, from-scratch project rather than a port. Thanks
 to the Jellyfin project and community for the media server this app is built around.
+
+## License & privacy
+
+VegaFin is licensed under the [MIT License](LICENSE). Third-party software it depends on or
+bundles is covered separately - see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+VegaFin has no backend of its own; your server address and credentials go directly to the
+Jellyfin server you connect it to. See the [Privacy Policy](docs/privacy.html) for details.

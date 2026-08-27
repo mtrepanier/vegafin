@@ -1421,6 +1421,18 @@ purpose when it's done - printed at the end, along with how to get back to a bra
 than switching back automatically and risking whoever's about to upload the `.vpkg` believing
 they built one commit when they actually built another.
 
+## Legal & privacy
+
+`LICENSE` (MIT) and `THIRD-PARTY-NOTICES.md` (Shaka Player, Apache-2.0, vendored under
+`src/w3cmedia/shakaplayer/`; `@jellyfin/sdk`, MPL-2.0, used unmodified as a dependency) cover the
+repo's own licensing. `docs/privacy.html` is the privacy policy - required by the Amazon Appstore
+submission flow, which asks for a reachable URL, not just a file in the repo.
+
+To get that URL: Settings → Pages → Source: "Deploy from a branch" → `main` / `/docs`. Once
+enabled, the policy is reachable at `https://mtrepanier.github.io/vegafin/privacy.html` (GitHub
+Pages takes a minute or two to build after first enabling, and after each push that changes
+`docs/`). That URL is what goes in the Appstore's privacy policy field.
+
 ## Roadmap
 
 - **Phase 1** (done, verified on the Vega Virtual Device) — Home page ("My Media": a
