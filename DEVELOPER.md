@@ -1372,7 +1372,12 @@ Release, in two steps rather than one:
    plain `git push` from a runner produces an unsigned commit the ruleset would reject outright.
    Merging a PR through GitHub's own merge button/API produces a GitHub-signed merge commit
    automatically, which is what actually satisfies that rule - pushing straight to `main` was
-   never a viable option here, not a first choice that got second-guessed.
+   never a viable option here, not a first choice that got second-guessed. The ruleset also
+   requires at least one approving review (`pull_request` rule, `bypass_actors` is empty so this
+   applies to everyone including admins) - since these PRs are authored by `github-actions[bot]`,
+   approving them yourself still counts (GitHub only blocks *self*-review, and the bot isn't you),
+   but it does mean every automated PR below needs an explicit Approve click before it can merge,
+   not just a Merge click.
 2. Once that PR is reviewed and merged, **Tag Release** triggers automatically (on any
    `package.json` change landing on `main`), tags `vX.Y.Z`, and publishes a GitHub Release with
    auto-generated notes (from merged PR titles since the last release - this project's existing
