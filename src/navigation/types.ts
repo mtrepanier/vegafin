@@ -39,7 +39,7 @@ export type DrawerParamList = {
     collectionType: CollectionType;
     recursive: boolean;
   };
-  ItemGrid: { title: string; parentId?: string; includeItemTypes?: BaseItemKind[]; initialPosition?: number };
+  ItemGrid: { title: string; parentId?: string; includeItemTypes?: BaseItemKind[]; recursive?: boolean; initialPosition?: number };
   MoreHomeRow: { title: string; row: HomeRowRef; initialPosition?: number };
   Favorites: undefined;
   LiveTvGuide: undefined;
@@ -66,7 +66,7 @@ export type RootStackParamList = {
     recursive?: boolean;
   };
   LiveTvPlayback: { channelId: string };
-  Slideshow: { parentId: string; index: number; startSlideshow: boolean };
+  Slideshow: { parentId: string; itemId: string };
   NowPlaying: undefined;
   UpdateApp: undefined;
   License: undefined;

@@ -3,9 +3,12 @@ import { Pressable, StyleSheet, Text, View, type PressableStateCallbackType } fr
 import { useNavigation, useRoute, type RouteProp } from '@amazon-devices/react-navigation__native';
 import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
+import { ItemSortBy } from '@jellyfin/sdk/lib/generated-client/models/item-sort-by';
 import { useTheme } from '../../theme/ThemeContext';
 import { layout } from '../../theme/types';
 import { useCurrentUser } from '../../services/storage/ServerRepositoryContext';
+import { useAppSettings } from '../../services/storage/AppSettingsContext';
+import { Clock } from '../../components/Clock';
 import { useInfiniteItemList } from '../../services/jellyfin/ItemPager';
 import { fetchHomeRowPage, fetchLibraryPage, resolveLibrarySort, LIBRARY_SORT_OPTIONS, type LibrarySortField, type SortDirection } from '../../services/jellyfin/library';
 import { primaryImageUrl } from '../../services/jellyfin/images';
@@ -18,6 +21,7 @@ import { serverRepository } from '../../services/storage/ServerRepository';
 import type { AppNavigationProp, DrawerParamList } from '../../navigation/types';
 
 const GRID_COLUMNS = 6;
+const LANDSCAPE_GRID_COLUMNS = 4;
 const LIST_COLUMNS = 1;
 
 export type LibrarySort = { sortBy: LibrarySortField; direction: SortDirection };
@@ -31,6 +35,13 @@ interface LibraryGridProps {
    * rewritten to take the sort value itself instead of just a flag. */
   sort?: LibrarySort;
   onSortChange?: (sortBy: LibrarySortField, direction: SortDirection) => void;
+  /** Card shape for this grid's "grid" view mode - defaults to the portrait movie-poster shape
+   * (`layout.poster`, ~2:3) every other library uses. A photo library's folder browse
+   * (`ItemGridScreen` with `recursive: false`) passes 'landscape' instead, for both album
+   * folders and individual photos, since a tall poster shape doesn't suit either - 16:9
+   * (`layout.landscape`) reads as a photo/folder thumbnail the way 2:3 reads as a movie poster.
+   * "List" view mode already used `layout.landscape` regardless, so this only changes "grid". */
+  gridAspect?: 'poster' | 'landscape';
 }
 
 /** One field's two rows in the sort picker below - "A to Z"/"Z to A", not a field name plus a
@@ -106,7 +117,7 @@ function SortPicker({ current, onSelect, onClose }: { current: LibrarySort; onSe
  * FavoritesScreen.tsx) - mirrors `CollectionFolderView.kt` / `ItemGrid.kt`, simplified per
  * navigation/types.ts's `ItemGrid`/`FilteredCollection` comment: sort + a grid/list toggle, no
  * persisted per-user view preferences (Phase 2 territory). */
-export function LibraryGrid({ title, fetchPage, sort, onSortChange }: LibraryGridProps) {
+export function LibraryGrid({ title, fetchPage, sort, onSortChange, gridAspect = 'poster' }: LibraryGridProps) {
   const { colors } = useTheme();
   const t = useT();
   const navigation = useNavigation<AppNavigationProp<keyof DrawerParamList>>();
@@ -116,13 +127,18 @@ export function LibraryGrid({ title, fetchPage, sort, onSortChange }: LibraryGri
 
   const currentSortOption = sort ? LIBRARY_SORT_OPTIONS.find((o) => o.value === sort.sortBy) : undefined;
 
-  const numColumns = viewMode === 'grid' ? GRID_COLUMNS : LIST_COLUMNS;
-  const metrics = viewMode === 'grid' ? layout.poster : layout.landscape;
+  const numColumns = viewMode === 'grid' ? (gridAspect === 'landscape' ? LANDSCAPE_GRID_COLUMNS : GRID_COLUMNS) : LIST_COLUMNS;
+  const metrics = viewMode === 'grid' ? (gridAspect === 'landscape' ? layout.landscape : layout.poster) : layout.landscape;
+
+  const { showClock } = useAppSettings();
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={styles.toolbar}>
+      <View style={styles.titleRow}>
         <Text style={[styles.title, { color: colors.onBackground }]}>{title}</Text>
+        {showClock ? <Clock /> : null}
+      </View>
+      <View style={styles.toolbar}>
         <View style={styles.toolbarButtons}>
           {sort && currentSortOption ? (
             <Pressable onPress={() => setSortPickerOpen((v) => !v)} style={[styles.toolbarButton, { borderColor: colors.border }]}>
@@ -233,19 +249,25 @@ export function FilteredCollectionScreen() {
 // genre/studio's items - see navigation/types.ts's ItemGrid comment for the scope this covers).
 export function ItemGridScreen() {
   const route = useRoute<RouteProp<DrawerParamList, 'ItemGrid'>>();
-  const { title, parentId, includeItemTypes } = route.params;
+  const { title, parentId, includeItemTypes, recursive = true } = route.params;
   const currentUser = useCurrentUser();
   const userId = currentUser?.user.id;
 
+  // A folder-style browse (recursive: false - currently only a photo library's albums, see
+  // MainDrawerNavigator.tsx) defaults to Folder sort so albums group above loose photos the
+  // first time you open it; every other grid keeps defaulting to Name, same as before Folder
+  // sort existed.
+  const defaultSortBy = recursive ? undefined : ItemSortBy.IsFolder;
+
   // See FilteredCollectionScreen's own sortKey comment above - same dual role here.
   const sortKey = `${parentId ?? ''}-${(includeItemTypes ?? []).join(',')}`;
-  const [sort, setSort] = useState(() => resolveLibrarySort(currentUser?.user.librarySort?.[sortKey]));
+  const [sort, setSort] = useState(() => resolveLibrarySort(currentUser?.user.librarySort?.[sortKey], defaultSortBy));
   // Same reset-on-identity-change need as FilteredCollectionScreen above: clicking a different
   // library in the side nav while already on this screen updates route.params on the *same*
   // mounted instance rather than remounting it, so without this effect the sort just picked for
   // the previous library kept being reused for whichever one you clicked next.
   useEffect(() => {
-    setSort(resolveLibrarySort(currentUser?.user.librarySort?.[sortKey]));
+    setSort(resolveLibrarySort(currentUser?.user.librarySort?.[sortKey], defaultSortBy));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sortKey]);
 
@@ -254,11 +276,11 @@ export function ItemGridScreen() {
       fetchLibraryPage(userId ?? '', {
         parentId,
         includeItemTypes,
-        recursive: true,
+        recursive,
         sortBy: sort.sortBy,
         sortDirection: sort.direction,
       })(startIndex, limit),
-    [userId, parentId, includeItemTypes, sort],
+    [userId, parentId, includeItemTypes, recursive, sort],
   );
 
   if (!userId) {
@@ -274,6 +296,7 @@ export function ItemGridScreen() {
         setSort({ sortBy, direction });
         serverRepository.setLibrarySort(sortKey, sortBy, direction);
       }}
+      gridAspect={recursive ? 'poster' : 'landscape'}
     />
   );
 }
@@ -301,12 +324,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  toolbar: {
+  titleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingHorizontal: layout.contentPadding,
+    paddingTop: 24,
+  },
+  toolbar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
     alignItems: 'center',
     paddingHorizontal: layout.contentPadding,
-    paddingTop: layout.contentPadding,
+    paddingTop: 12,
   },
   toolbarButtons: {
     flexDirection: 'row',

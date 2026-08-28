@@ -1,5 +1,6 @@
 import { getItemsApi } from '@jellyfin/sdk/lib/utils/api/items-api';
 import { ItemSortBy } from '@jellyfin/sdk/lib/generated-client/models/item-sort-by';
+import { ItemFields } from '@jellyfin/sdk/lib/generated-client/models/item-fields';
 import { SortOrder } from '@jellyfin/sdk/lib/generated-client/models/sort-order';
 import { BaseItemKind } from '@jellyfin/sdk/lib/generated-client/models/base-item-kind';
 import { CollectionType } from '@jellyfin/sdk/lib/generated-client/models/collection-type';
@@ -22,6 +23,7 @@ interface DirectionLabels {
 const ALPHA_DIRECTION: DirectionLabels = { asc: 'library.sort.direction.aToZ', desc: 'library.sort.direction.zToA' };
 const DATE_DIRECTION: DirectionLabels = { asc: 'library.sort.direction.oldestFirst', desc: 'library.sort.direction.newestFirst' };
 const RATING_DIRECTION: DirectionLabels = { asc: 'library.sort.direction.lowestFirst', desc: 'library.sort.direction.highestFirst' };
+const FOLDER_DIRECTION: DirectionLabels = { asc: 'library.sort.direction.foldersFirst', desc: 'library.sort.direction.foldersLast' };
 
 /** Sort fields exposed in the library sort-by control (a subset of `ItemSortBy` - mirrors the
  * handful of options Kotlin's `SortByButton.kt` actually surfaces per content type). `labelKey`
@@ -30,6 +32,7 @@ const RATING_DIRECTION: DirectionLabels = { asc: 'library.sort.direction.lowestF
  * ("A to Z"/"Z to A", not a generic "Ascending"/"Descending") - both resolved via `useT()` at
  * display time, not plain strings. */
 export const LIBRARY_SORT_OPTIONS = [
+  { value: ItemSortBy.IsFolder, labelKey: 'library.sort.folder' as TranslationKey, direction: FOLDER_DIRECTION },
   { value: ItemSortBy.SortName, labelKey: 'library.sort.name' as TranslationKey, direction: ALPHA_DIRECTION },
   { value: ItemSortBy.DateCreated, labelKey: 'library.sort.dateAdded' as TranslationKey, direction: DATE_DIRECTION },
   { value: ItemSortBy.PremiereDate, labelKey: 'library.sort.releaseDate' as TranslationKey, direction: DATE_DIRECTION },
@@ -39,14 +42,28 @@ export const LIBRARY_SORT_OPTIONS = [
 export type LibrarySortField = (typeof LIBRARY_SORT_OPTIONS)[number]['value'];
 export type SortDirection = 'Ascending' | 'Descending';
 
+/** `IsFolder` alone isn't a useful ordering (every folder ties) - Jellyfin's own clients always
+ * pair it with a second field to break those ties, `SortName` here, same as the "folder" sort
+ * this app's photo library browsing (`fetchLibraryPage` below) is modeled on. Every other field
+ * is already a full ordering on its own. */
+function sortFieldsForQuery(sortBy: LibrarySortField): ItemSortBy[] {
+  return sortBy === ItemSortBy.IsFolder ? [ItemSortBy.IsFolder, ItemSortBy.SortName] : [sortBy];
+}
+
 /** Validates a persisted `JellyfinUser.librarySort[key]` entry back into a real sort choice,
- * falling back to the default (Name, Ascending) for a missing entry or one whose `sortBy` no
- * longer matches any current `LIBRARY_SORT_OPTIONS` value - stored as a loose string (see that
- * type's own comment for why), so this is the one place that re-validates it against the
- * options a screen can actually render/request. */
-export function resolveLibrarySort(stored: LibrarySortPreference | undefined): { sortBy: LibrarySortField; direction: SortDirection } {
+ * falling back to `defaultSortBy`/Ascending for a missing entry or one whose `sortBy` no longer
+ * matches any current `LIBRARY_SORT_OPTIONS` value - stored as a loose string (see that type's
+ * own comment for why), so this is the one place that re-validates it against the options a
+ * screen can actually render/request. `defaultSortBy` defaults to Name - the one screen that
+ * wants a different first-time default (a photo library's folder-style browse, see
+ * MainDrawerNavigator.tsx) passes Folder explicitly rather than this changing for everyone just
+ * because Folder was added to `LIBRARY_SORT_OPTIONS`. */
+export function resolveLibrarySort(
+  stored: LibrarySortPreference | undefined,
+  defaultSortBy: LibrarySortField = ItemSortBy.SortName,
+): { sortBy: LibrarySortField; direction: SortDirection } {
   const match = stored && LIBRARY_SORT_OPTIONS.find((option) => option.value === stored.sortBy);
-  return match ? { sortBy: match.value, direction: stored.direction } : { sortBy: LIBRARY_SORT_OPTIONS[0].value, direction: 'Ascending' };
+  return match ? { sortBy: match.value, direction: stored.direction } : { sortBy: defaultSortBy, direction: 'Ascending' };
 }
 
 export interface LibraryQuery {
@@ -104,18 +121,31 @@ export function sortLibrariesByType(libraries: BaseItemDto[]): BaseItemDto[] {
  * cases Phase 1's nav params actually reach (see navigation/types.ts's `ItemGrid`/
  * `FilteredCollection` comment) - person/artist grid variants are left for a later phase. */
 export function fetchLibraryPage(userId: string, query: LibraryQuery): FetchPage<BaseItemDto> {
+  const recursive = query.recursive ?? true;
   return async (startIndex, limit): Promise<PageResult<BaseItemDto>> => {
     const { data } = await getItemsApi(jellyfinClient.api).getItems({
       userId,
       parentId: query.parentId,
       includeItemTypes: query.includeItemTypes,
-      recursive: query.recursive ?? true,
+      recursive,
       isFavorite: query.isFavorite,
       startIndex,
       limit,
-      sortBy: [query.sortBy ?? ItemSortBy.SortName],
+      sortBy: sortFieldsForQuery(query.sortBy ?? ItemSortBy.SortName),
       sortOrder: [query.sortDirection === 'Descending' ? SortOrder.Descending : SortOrder.Ascending],
       enableTotalRecordCount: true,
+      // A non-recursive fetch is a folder-level browse (a photo library's albums, currently the
+      // only place this app sets recursive:false - see MainDrawerNavigator.tsx/navigateToItem.ts)
+      // rather than a flat content grid, so it also wants the fields a folder tile needs
+      // (ChildCount for an item count, Path/MediaSourceCount to tell a real album apart from a
+      // leaf item) instead of the plain poster-card fields a recursive movie/show grid gets by
+      // default. ParentId is also gated behind Fields (confirmed on-device: without it, every
+      // Photo item came back with ParentId undefined, so navigateToItem.ts's Photo case - which
+      // needs it to open SlideshowScreen - silently no-op'd on every tap, no error either).
+      fields: recursive
+        ? undefined
+        : [ItemFields.PrimaryImageAspectRatio, ItemFields.SortName, ItemFields.Path, ItemFields.ChildCount, ItemFields.MediaSourceCount, ItemFields.ParentId],
+      imageTypeLimit: recursive ? undefined : 1,
     });
     return { items: data.Items ?? [], totalCount: data.TotalRecordCount ?? 0 };
   };

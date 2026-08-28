@@ -69,6 +69,32 @@ describe('fetchLibraryPage', () => {
     expect(call.isFavorite).toBe(true);
   });
 
+  it('expands a Folder sort into IsFolder+SortName so ties break alphabetically', async () => {
+    mockGetItems.mockResolvedValue({ data: { Items: [], TotalRecordCount: 0 } });
+    const page = fetchLibraryPage('user-1', { sortBy: ItemSortBy.IsFolder });
+    await page(0, 10);
+    const call = mockGetItems.mock.calls[0][0];
+    expect(call.sortBy).toEqual([ItemSortBy.IsFolder, ItemSortBy.SortName]);
+  });
+
+  it('requests folder-tile fields and an imageTypeLimit for a non-recursive (folder) browse', async () => {
+    mockGetItems.mockResolvedValue({ data: { Items: [], TotalRecordCount: 0 } });
+    const page = fetchLibraryPage('user-1', { recursive: false });
+    await page(0, 10);
+    const call = mockGetItems.mock.calls[0][0];
+    expect(call.fields).toEqual(['PrimaryImageAspectRatio', 'SortName', 'Path', 'ChildCount', 'MediaSourceCount', 'ParentId']);
+    expect(call.imageTypeLimit).toBe(1);
+  });
+
+  it('omits fields and imageTypeLimit for a recursive browse', async () => {
+    mockGetItems.mockResolvedValue({ data: { Items: [], TotalRecordCount: 0 } });
+    const page = fetchLibraryPage('user-1', {});
+    await page(0, 10);
+    const call = mockGetItems.mock.calls[0][0];
+    expect(call.fields).toBeUndefined();
+    expect(call.imageTypeLimit).toBeUndefined();
+  });
+
   it('defaults items/totalCount to empty/zero when the response omits them', async () => {
     mockGetItems.mockResolvedValue({ data: {} });
     const page = fetchLibraryPage('user-1', {});
@@ -136,6 +162,17 @@ describe('resolveLibrarySort', () => {
     expect(resolveLibrarySort({ sortBy: 'SomeRemovedField', direction: 'Descending' })).toEqual({
       sortBy: ItemSortBy.SortName,
       direction: 'Ascending',
+    });
+  });
+
+  it('falls back to a caller-supplied default (e.g. Folder for a photo library) when nothing is stored', () => {
+    expect(resolveLibrarySort(undefined, ItemSortBy.IsFolder)).toEqual({ sortBy: ItemSortBy.IsFolder, direction: 'Ascending' });
+  });
+
+  it('still prefers a stored value over a caller-supplied default', () => {
+    expect(resolveLibrarySort({ sortBy: ItemSortBy.DateCreated, direction: 'Descending' }, ItemSortBy.IsFolder)).toEqual({
+      sortBy: ItemSortBy.DateCreated,
+      direction: 'Descending',
     });
   });
 });
