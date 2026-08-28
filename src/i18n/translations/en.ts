@@ -136,6 +136,7 @@ export const en = {
   'library.grid': 'Grid',
   'library.list': 'List',
   'library.browse': 'Browse',
+  'library.sort.folder': 'Folder',
   'library.sort.name': 'Name',
   'library.sort.dateAdded': 'Date Added',
   'library.sort.releaseDate': 'Release Date',
@@ -146,6 +147,8 @@ export const en = {
   'library.sort.direction.oldestFirst': 'Oldest First',
   'library.sort.direction.highestFirst': 'Highest First',
   'library.sort.direction.lowestFirst': 'Lowest First',
+  'library.sort.direction.foldersFirst': 'Folders First',
+  'library.sort.direction.foldersLast': 'Folders Last',
 
   // Home rows
   'home.continueWatching': 'Continue Watching',
@@ -179,7 +182,6 @@ export const en = {
   'stub.debug': 'Debug',
   'stub.mediaItem': 'Media Item',
   'stub.recordings': 'Recordings',
-  'stub.slideshow': 'Slideshow',
   'stub.updateApp': 'Update App',
   'stub.licenses': 'Licenses',
   'stub.nowPlaying': 'Now Playing',

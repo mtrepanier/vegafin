@@ -229,6 +229,26 @@ function DrawerContent({ navigation, state }: DrawerContentComponentProps) {
                       navigation.navigate('LiveTvGuide');
                       return;
                     }
+                    if (library.CollectionType === CollectionType.Photos || library.CollectionType === CollectionType.Homevideos) {
+                      // Photo libraries are organized as nested album folders, unlike the flat
+                      // movie/show libraries this screen otherwise browses recursively - a
+                      // recursive, Photo-only fetch would flatten every album into one grid
+                      // instead of showing the top-level albums to tap into (see
+                      // navigateToItem.ts's PhotoAlbum/Folder case for going a level deeper).
+                      // No includeItemTypes filter, unlike every other library type: that filter
+                      // exists specifically to hide stray folder tiles (see library.ts's own
+                      // comment) - here the folders are exactly what should show. Homevideos
+                      // ("Home Videos & Photos") is included alongside Photos - confirmed
+                      // on-device that a personal photo library is commonly configured as
+                      // Homevideos rather than the more narrowly-named Photos type, and it's
+                      // organized the same folder-of-mixed-photos/videos way.
+                      navigation.navigate('ItemGrid', {
+                        title: library.Name ?? t('common.library'),
+                        parentId: library.Id,
+                        recursive: false,
+                      });
+                      return;
+                    }
                     navigation.navigate('ItemGrid', {
                       title: library.Name ?? t('common.library'),
                       parentId: library.Id,

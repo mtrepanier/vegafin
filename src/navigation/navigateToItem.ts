@@ -35,5 +35,22 @@ export function navigateToItem<T extends keyof DrawerParamList>(navigation: AppN
     });
     return;
   }
+  if (item.Type === BaseItemKind.PhotoAlbum || item.Type === BaseItemKind.Folder) {
+    // A photo library's album/folder tiles (see MainDrawerNavigator.tsx's Photos case) - open
+    // one more level of the same non-recursive browse rather than a detail page, same as
+    // opening the library itself.
+    navigation.navigate('ItemGrid', { title: item.Name ?? '', parentId: item.Id, recursive: false });
+    return;
+  }
+  if (item.Type === BaseItemKind.Photo) {
+    if (!item.ParentId) {
+      return;
+    }
+    // Full-screen single-photo viewer (SlideshowScreen) - it re-fetches its own containing
+    // folder's item list (by parentId) to know what's next/previous, rather than this needing
+    // to hand over the whole grid's already-loaded array.
+    navigation.navigate('Slideshow', { parentId: item.ParentId, itemId: item.Id });
+    return;
+  }
   navigation.navigate('MediaItem', { itemId: item.Id, type: item.Type, collectionType: undefined });
 }

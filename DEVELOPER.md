@@ -946,6 +946,138 @@ existed) for a `CollectionType` this app has no specific mapping for - not every
 needed to be covered to fix the reported bug, just the two the screenshots showed (Movies, in
 two different server display languages).
 
+### Photo library folder browsing (`MainDrawerNavigator.tsx`, `navigateToItem.ts`, `library.ts`)
+
+Photo libraries are organized as nested album folders on the server, unlike the flat
+movie/show libraries above - so the fix in the previous section (filter `includeItemTypes` to
+hide stray `Folder` items) is deliberately *not* applied here. For a `CollectionType.Photos` *or*
+`CollectionType.Homevideos` library, `MainDrawerNavigator.tsx`'s library row instead navigates to
+`ItemGrid` with `recursive: false` and no `includeItemTypes` filter at all, so whatever's directly
+under that `parentId` comes back as-is - album folders and loose photos alike, one level at a
+time, mirroring a real Jellyfin client's
+`Items?ParentId=...&SortBy=IsFolder,SortName&SortOrder=Ascending` call rather than this app's
+usual flat, recursive grid fetch.
+
+**Both collection types matter here, not just `Photos`**: confirmed via on-device testing with a
+real personal photo library that it was actually configured as `Homevideos` ("Home Videos &
+Photos") on the server, not the more narrowly-named `Photos` type - the first version of this
+feature only special-cased `Photos`, so that library fell straight through to the old
+recursive+`includeItemTypes: [Video, Photo]` path (`LIBRARY_ITEM_KINDS_BY_COLLECTION_TYPE`'s
+existing `Homevideos` mapping) and showed a single flat grid of every photo, no folders, exactly
+the old bug this feature was meant to fix. Diagnosed by adding a temporary `console.log` of the
+actual query object around the `getItems` call and reading it back via `vega device
+start-log-stream` while reproducing on the Virtual Device - the request really was going out with
+`includeItemTypes: ["Video","Photo"], recursive: true`, not the folder-browse shape at all, which
+pointed straight at the `CollectionType` check rather than anything deeper in the sort/fields
+logic.
+
+- **`navigateToItem.ts`** gained a case for `BaseItemKind.PhotoAlbum`/`Folder`: pressing one
+  navigates to `ItemGrid` again with `parentId` set to that folder's own id and `recursive:
+  false` - the same non-recursive one-level-at-a-time browse as opening the library itself, so
+  drilling into nested albums just keeps re-entering this same route rather than needing a
+  dedicated album-detail screen.
+- **`fetchLibraryPage` (`library.ts`) now takes `recursive` into account for which `Fields` it
+  requests**: a non-recursive (folder-style) call also asks for `PrimaryImageAspectRatio`,
+  `SortName`, `Path`, `ChildCount`, `MediaSourceCount`, `ParentId`, plus `imageTypeLimit: 1` -
+  fields a folder tile can use (an item count, telling a real album apart from a leaf item) that
+  a plain recursive movie/show grid has never needed and still doesn't request. **`ParentId` is
+  the one that actually matters for correctness, not just a nice-to-have**: like most fields
+  beyond the bare minimum, Jellyfin gates it behind `Fields` rather than returning it by default -
+  missing it the first time around meant every `Photo` item's `ParentId` came back `undefined`,
+  so `navigateToItem.ts`'s `Photo` case (which needs it to open `SlideshowScreen`) silently did
+  nothing on every tap, no error or crash either. Confirmed on-device: tapping a photo simply
+  didn't respond.
+- **A new `Folder` sort option** (`ItemSortBy.IsFolder`) was added to `LIBRARY_SORT_OPTIONS`,
+  alongside the existing Name/Date Added/Release Date/Rating. `IsFolder` alone only ties, so
+  `library.ts`'s `sortFieldsForQuery()` always expands it to `[IsFolder, SortName]` before it
+  reaches `getItems` - the same compound sort a real photo-browsing client sends. It shows up in
+  the sort picker for every library type (there's no per-library-type filtering of sort options
+  today), but only actually does anything where folders exist to sort - elsewhere it behaves the
+  same as a plain Name sort.
+- **`resolveLibrarySort()` gained an optional second `defaultSortBy` parameter**, because adding
+  `Folder` to `LIBRARY_SORT_OPTIONS` would otherwise have silently changed every *other*
+  library's first-time-opened default too (it used to default to whichever option was first in
+  that array). `ItemGridScreen` now passes `ItemSortBy.IsFolder` explicitly only when
+  `recursive === false`, so a freshly opened photo library defaults to folders-first while every
+  other grid keeps defaulting to Name, same as before this existed.
+- **Landscape (16:9) tiles instead of the usual portrait poster shape.** `LibraryGrid` gained a
+  `gridAspect?: 'poster' | 'landscape'` prop (defaults to `'poster'`, unchanged everywhere else);
+  `ItemGridScreen` passes `'landscape'` whenever `recursive === false`. Album folders and
+  individual photos both use `layout.landscape` (`215x121`, 16:9) instead of `layout.poster`
+  (`115x172`, ~2:3) in that case - a tall movie-poster shape doesn't suit either a folder icon or
+  a photo thumbnail. "Grid" mode's column count also drops from `GRID_COLUMNS` (6) to
+  `LANDSCAPE_GRID_COLUMNS` (4) for the wider cards; "list" mode was already single-column
+  landscape regardless, so it needed no change.
+- **The library grid toolbar was split into two rows** to make room for a clock and give the
+  title a cleaner top-of-screen position, matching `HomeHero.tsx`/`LiveTvGuideScreen.tsx`'s own
+  title+clock convention (`showClock` from `useAppSettings()`, same setting). Previously `title`
+  and the sort/grid-toggle buttons shared one row (`toolbar`); now a `titleRow` (title + `Clock`)
+  sits above a separate `toolbar` row holding just the buttons, right-aligned. Applies to every
+  `LibraryGrid`-based screen, not just photo folders, for consistency with the rest of the app.
+- **A full-screen single-photo viewer** (`SlideshowScreen.tsx`) - see its own section below.
+
+### Single-photo viewer (`SlideshowScreen.tsx`)
+
+Tapping a `Photo`-kind item (in a photo library's folder browse above) now opens a full-screen
+viewer instead of falling through to `MediaItemScreen`'s stub case. `navigateToItem.ts` routes it
+to the root-stack `Slideshow` route (`{ parentId, itemId }` - `parentId` is the photo's own
+`ParentId`, not the library's) rather than a drawer `MediaItem` push, matching how `Playback`
+already works as a bare full-screen route outside the drawer chrome.
+
+- **Re-fetches its own copy of the containing folder**, rather than the caller handing over
+  whatever the grid already had loaded - `fetchLibraryPage(userId, { parentId, recursive: false,
+  sortBy, sortDirection })`, with `sortBy`/`sortDirection` resolved via `resolveLibrarySort()`
+  against the exact same `` `${parentId}-` `` key `ItemGridScreen` persists a photo folder's sort
+  under. This keeps Left/Right walking the identical order the user saw in the grid, independent
+  of how much of that grid happened to be paged in already, and independent of whether the photo
+  they tapped was itself several pages deep.
+- **Left/Right move to the previous/next `Photo`-kind item** in that same fetch (folders mixed in
+  at the same level are filtered out client-side - only photos are something to step through).
+  Uses the same `useTVEventHandler`/`HWEvent`/dedupe-by-timestamp pattern as
+  `LiveTvPlayerScreen.tsx`'s remote handling, not a new one. Back exits via `navigation.goBack()`.
+
+- **Two-phase pagination catch-up**, both driven off the same `useInfiniteItemList` pager the
+  grid itself uses: (1) on mount, the tapped photo's id might not be in the first loaded page at
+  all (it could be several pages deep) - an effect keeps calling `loadMore()` until it's found or
+  there's nothing left to load, waiting for the pager's own first response
+  (`totalCount !== null`) before joining in, so it doesn't race the pager's own mount-time fetch
+  with a redundant one. (2) pressing Right/next past the end of what's currently loaded sets a
+  `pendingStepRef` flag and calls `loadMore()`; a second effect advances to the newly-loaded next
+  photo once it arrives. Left/previous never needs this - pages load from index 0 forward, so
+  there's nothing earlier than what's already loaded to wait for.
+- **Not an auto-advancing slideshow/screensaver** - this is the manual viewer
+  `AppScreensaver.kt`'s auto-advance mode would eventually build on top of; that part of Phase 3
+  (see Roadmap) is still open.
+
+**Gotcha, found via on-device testing right after this shipped**: pressing Back once was landing
+on Home instead of the photo folder the viewer opened from - not every time, but reliably enough
+to notice immediately. First fix attempt was wrong: assumed a single physical back press was
+somehow reaching this screen's own `useTVEventHandler` twice (a `console.log` of
+`navigation.getState()` right before `goBack()`, read back via `vega device start-log-stream`,
+did show two `'back'`-typed `HWEvent`s about 1ms apart), and added an `exitingRef` guard so only
+the first ever called `goBack()`. That didn't fix it - because the real second caller wasn't this
+screen at all. `@amazon-devices/react-navigation__native`'s `NavigationContainer` already wires
+its **own**, entirely separate hardware-back listener
+(`useBackButton.native.js`: `BackHandler.addEventListener('hardwareBackPress', () =>
+navigation.goBack())`, from `react-native`'s `BackHandler`, unrelated to Kepler's `HWEvent`
+system `useTVEventHandler` reads from) - so a screen that *also* handles `'back'` manually was
+always getting two independent `goBack()` calls per press, one from each system, no matter how
+well the manual one deduped itself. The first pop correctly closed `Slideshow` back to `Main`
+(still showing the photo folder's `ItemGrid`); the second, with nothing left to pop on the root
+stack, bubbled down into the focused Drawer navigator instead - which *can* still go back
+(`backBehavior="history"`, see the Drawer's own comment above) - popping its `[Home, ItemGrid]`
+history and landing on Home.
+
+**Actual fix**: removed the `'back'` case from `SlideshowScreen`'s `handleTVEvent` entirely,
+letting the automatic `NavigationContainer` handler own it exclusively - a single pop, no
+competition. This works here specifically because a photo viewer has no exit-time cleanup to
+run. `PlaybackScreens.tsx` and `LiveTvPlayerScreen.tsx` still handle `'back'` manually on
+purpose (they stop playback/release the player first), so **the same double-`goBack()` risk
+still exists there** - not fixed here since neither was actually reproduced misbehaving, only
+confirmed-broken code was changed. If it does turn up on one of those screens, the fix can't be
+"stop handling `'back'` there" (their cleanup would never run) - it'd need to prevent the
+automatic handler from *also* firing for that screen, not just out-dedupe it.
+
 ### Series unwatched-episode badge (`seriesBadge.ts`)
 
 Every card list that can show a Series item (Home rows, library grids, Favorites, "More Like
@@ -1465,8 +1597,12 @@ Pages takes a minute or two to build after first enabling, and after each push t
   specifically, a third+ language.
 - **Phase 3** (started) — [Live TV channel list + program guide](#live-tv-guide-livetvguidescreentsx-livetvplayerscreentsx-livetvts)
   is done (browse channels, see what's on, watch live); DVR (recording, scheduling) is not.
-  Still open: music playback (now playing/visualizer/lyrics), Jellyseerr discover integration,
-  screensaver/slideshow, photo albums.
+  [Photo library folder browsing](#photo-library-folder-browsing-maindrawernavigatortsx-navigatetoitemts-libraryts)
+  and the [single-photo viewer](#single-photo-viewer-slideshowscreentsx) are done (album folders,
+  sortable by Folder/Name/Date Added; tap a photo for a full-screen view with Left/Right
+  previous/next in the same folder). Still open: music playback (now playing/visualizer/lyrics),
+  Jellyseerr discover integration, an auto-advancing screensaver/slideshow mode built on top of
+  the viewer above.
 
 ## Project layout
 

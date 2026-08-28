@@ -135,6 +135,7 @@ export const fr: Record<TranslationKey, string> = {
   'library.grid': 'Grille',
   'library.list': 'Liste',
   'library.browse': 'Parcourir',
+  'library.sort.folder': 'Dossier',
   'library.sort.name': 'Nom',
   'library.sort.dateAdded': "Date d'ajout",
   'library.sort.releaseDate': 'Date de sortie',
@@ -145,6 +146,8 @@ export const fr: Record<TranslationKey, string> = {
   'library.sort.direction.oldestFirst': "Plus ancien d'abord",
   'library.sort.direction.highestFirst': "Plus élevé d'abord",
   'library.sort.direction.lowestFirst': "Plus faible d'abord",
+  'library.sort.direction.foldersFirst': "Dossiers d'abord",
+  'library.sort.direction.foldersLast': 'Dossiers en dernier',
 
   // Home rows
   'home.continueWatching': 'Continuer à regarder',
@@ -176,7 +179,6 @@ export const fr: Record<TranslationKey, string> = {
   'stub.debug': 'Débogage',
   'stub.mediaItem': 'Élément multimédia',
   'stub.recordings': 'Enregistrements',
-  'stub.slideshow': 'Diaporama',
   'stub.updateApp': "Mettre à jour l'application",
   'stub.licenses': 'Licences',
   'stub.nowPlaying': 'Lecture en cours',
