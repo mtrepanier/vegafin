@@ -115,6 +115,7 @@ export const en = {
   'setup.connect': 'Connect',
   'setup.selectUser': 'Select User',
   'setup.addUser': 'Add User',
+  'setup.signOut': 'Sign out',
   'setup.switchServers': 'Switch servers',
   'setup.enterServerAddress': 'Enter a server address.',
   'setup.unableToReachServer': 'Unable to reach the server.',

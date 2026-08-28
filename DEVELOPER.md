@@ -1329,10 +1329,67 @@ switcher UI outright rather than needing a parallel set built for the post-auth 
   elsewhere on this screen for the "Add User" sign-in flow). `createApiFor` builds a genuinely
   separate instance via the underlying `Jellyfin.createApi()` factory instead, safe to use
   side-by-side with the singleton and with each other.
+- **Fixed a real, serious bug found in production: this same avatar-fetch effect had no stable
+  dependency, so it looped forever and eventually crashed the app natively (SIGSEGV).**
+  `entry = serverRepository.listServers().find(...)` is a fresh object every render
+  (`listServers()` isn't memoized) - the effect's `useEffect(..., [entry])` used *reference*
+  equality, so a new `entry` object re-ran it on every render, and the effect's own
+  `setAvatarByUserId(...)` call at the end triggers exactly that re-render, which builds another
+  new `entry` object, which reruns the effect again - an unconditional infinite loop with no
+  circuit breaker. Confirmed via a real user's Amazon Appstore crash report (raw ACR, native
+  SIGSEGV in `libreact-native-0.83.so`, not symbolicated) plus a temporary axios response
+  interceptor logging every 401: `GET /Users/Me` was firing repeatedly within the same
+  millisecond against their server. The 401s themselves were real (an expired/invalid stored
+  access token - not a bug), but the *tight, uncircuit-broken retry loop* around handling that
+  401 is what hammered the JS↔native bridge continuously and eventually took the whole app down
+  natively, not just a bounded number of failed avatar fetches. **Fix**: a `avatarFetchKey`
+  string built from the server url plus each user's `id:accessToken`, memoized only by value
+  (not object identity) - the effect now depends on that string instead of `entry` directly, so
+  it only reruns when the underlying data actually changes. This class of bug (an object
+  rebuilt every render used as an effect dependency) is easy to miss in this codebase generally,
+  since `ServerRepository`'s read methods (`listServers()`, `listUsers()`, etc.) are plain
+  synchronous getters with no caching layer - worth checking for the same pattern anywhere else
+  an effect depends directly on one of their return values rather than a primitive/string
+  derived from it.
 - **Fixed a real bug found while wiring the PIN path into this more:** `PinEntryScreen.tsx`
   cleared the profile's PIN (`{ ...user, pin: null }`) on every *correct* entry, silently
   disabling PIN protection after its first successful use instead of keeping it set for next
   time. Now calls `changeUser` with the stored user unchanged.
+- **Fixed missing focus indicators, reported after this app reached real users on the Amazon
+  Appstore**: the "Select User" avatar tiles already had a focus ring, but several other
+  `Pressable`s on these two screens never rendered a focus state at all - `ServerListScreen.tsx`'s
+  Connect button and known-server rows, and `UserListScreen.tsx`'s Switch Servers / Sign In /
+  Quick Connect Cancel / Sign in with Code buttons - making it genuinely hard to tell where remote
+  focus was while setting the app up for the first time. Each now uses the same two focus idioms
+  already established elsewhere in the app rather than inventing a third: a primary CTA
+  (Connect/Sign In) inverts to `colors.onBackground`/`colors.background` when focused, matching
+  `NextUpCard.tsx`'s play button; every outline/plain button fills with `colors.primaryContainer`
+  when focused, matching `LibraryScreens.tsx`'s `SortPickerRow`. No new pattern, just the existing
+  ones applied to screens that had missed out on them.
+- **Sign out / forget, on both screens.** `ServerRepository.removeUser`/`removeServer` already
+  existed (and already handled clearing the active session if the thing being removed was the
+  one in use) but had no UI wired to them. `UserTile` (`UserListScreen.tsx`) gained a separate
+  "Sign out" row beneath the avatar/name - its own `Pressable`, not folded into the avatar's tap
+  target, so a remote user has to deliberately navigate down to it rather than risk hitting it
+  via the same press that switches profiles. `ServerListScreen.tsx`'s known-server rows gained a
+  trailing delete-outline icon button the same way. Neither screen was subscribed to
+  `ServerRepository` via `useSyncExternalStore` (they just read `listServers()` fresh in the
+  render body), so removing something wouldn't otherwise trigger a re-render - `UserListScreen`
+  piggybacks on `setAvatarByUserId` (already forces one, and needs to drop the removed user's
+  cached avatar anyway); `ServerListScreen` gained a small dedicated `forgetTick` counter for the
+  same purpose, since it had no existing state to piggyback on. No confirmation dialog - this
+  codebase doesn't have that pattern anywhere yet, and the action is easy to reverse (sign back
+  in) - worth adding one later if remote mis-presses turn out to be a real problem.
+- **Deferred keyboard on the URL/username/password fields** (`useDeferredKeyboardFocus`,
+  `focus/`). Remote/D-pad focus landing on a `TextInput` was popping the on-screen keyboard
+  immediately, before the user had actually chosen to type - `showSoftInputOnFocus={false}` gets
+  a `TextInput` to show a focus ring without the keyboard, but getting the keyboard to open on an
+  explicit Select press needs a blur-then-refocus cycle (flipping the prop while already focused
+  doesn't retroactively show it - native only reads it at the moment focus is gained). The hook
+  bundles that into `{ ref, showSoftInputOnFocus, onPress, onBlur }` to spread onto a `TextInput`;
+  `onBlur` resets it, so leaving and re-entering the field starts the same way rather than the
+  keyboard popping immediately the second time. Applied to `ServerListScreen.tsx`'s URL field and
+  `UserListScreen.tsx`'s username/password fields.
 
 ### Theming
 

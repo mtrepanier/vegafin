@@ -113,6 +113,7 @@ export const fr: Record<TranslationKey, string> = {
   'setup.connect': 'Connexion',
   'setup.selectUser': 'Sélectionner un utilisateur',
   'setup.addUser': 'Ajouter un utilisateur',
+  'setup.signOut': 'Déconnexion',
   'setup.switchServers': 'Changer de serveur',
   'setup.enterServerAddress': "Entrez l'adresse d'un serveur.",
   'setup.unableToReachServer': 'Impossible de joindre le serveur.',
