@@ -37,6 +37,31 @@ remote.
   override in Settings).
 - A **Settings** screen for tuning playback behavior — skip seconds, auto-hide delay, and more.
 
+## Roadmap
+
+**Available now:**
+
+- Home screen with Continue Watching, Next Up, and Recently Added
+- Browse Movies, TV Shows, and Favorites, with detail pages and season/episode browsing
+- Search across movies, shows, episodes, collections, and people
+- Sign in with Quick Connect or a username/password
+- Skip Intro / Skip Outro
+- Multiple servers & users, switchable in a couple of clicks
+- Live TV with a channel list and program guide
+- A Settings screen for playback and interface options
+- English and French, matching your device's language
+
+**Coming later:**
+
+- Live TV recording & scheduling (DVR)
+- Music playback (now playing, lyrics)
+- Subtitle customization
+- Jellyseerr integration for discovering and requesting new content
+- Screensaver / photo slideshow
+- Additional languages beyond English and French
+
+See [DEVELOPER.md](DEVELOPER.md#roadmap) for the full, detailed roadmap.
+
 ## Getting VegaFin
 
 VegaFin is currently under review for the Amazon Appstore — once it's published, a link will go
