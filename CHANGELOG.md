@@ -4,6 +4,24 @@ All notable changes to VegaFin are tracked here, generated automatically from
 merged pull requests at release time - see
 [DEVELOPER.md](DEVELOPER.md#versioning--releases) for how.
 
+## [v0.2.0] - 2026-08-28
+
+## What's Changed
+* Update CHANGELOG.md for v0.1.1 by @github-actions[bot] in https://github.com/mtrepanier/vegafin/pull/17
+* Add Amazon Appstore listing image assets by @mtrepanier in https://github.com/mtrepanier/vegafin/pull/18
+* Resize updated store screenshots to 1920x1080 by @mtrepanier in https://github.com/mtrepanier/vegafin/pull/19
+* Add fourth store screenshot by @mtrepanier in https://github.com/mtrepanier/vegafin/pull/20
+* Add structured bug report and feature request issue templates by @mtrepanier in https://github.com/mtrepanier/vegafin/pull/21
+* Require an approving review before merging to main by @mtrepanier in https://github.com/mtrepanier/vegafin/pull/22
+* Add LICENSE, third-party notices, and a privacy policy page by @mtrepanier in https://github.com/mtrepanier/vegafin/pull/23
+* Add a user-facing Roadmap section to README by @mtrepanier in https://github.com/mtrepanier/vegafin/pull/24
+* Add photo library folder browsing and a single-photo viewer by @mtrepanier in https://github.com/mtrepanier/vegafin/pull/25
+* Add sign-out/forget actions and fix focus visibility on setup screens by @mtrepanier in https://github.com/mtrepanier/vegafin/pull/26
+* Release v0.2.0 by @github-actions[bot] in https://github.com/mtrepanier/vegafin/pull/27
+
+
+**Full Changelog**: https://github.com/mtrepanier/vegafin/compare/v0.1.1...v0.2.0
+
 ## [v0.1.1] - 2026-08-26
 
 ## What's Changed
