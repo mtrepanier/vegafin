@@ -14,6 +14,7 @@ import { userImageUrl } from '../../services/jellyfin/images';
 import { useTheme } from '../../theme/ThemeContext';
 import { useT } from '../../i18n/useTranslation';
 import type { TFunction } from '../../i18n/useTranslation';
+import { useDeferredKeyboardFocus } from '../../focus/useDeferredKeyboardFocus';
 import type { JellyfinServer, JellyfinUser } from '../../services/storage/types';
 import type { SetupStackParamList } from '../../navigation/types';
 
@@ -164,8 +165,15 @@ function QuickConnectPanel({
       ) : (
         <ActivityIndicator color={colors.primary} />
       )}
-      <Pressable onPress={onCancel} style={styles.quickConnectCancel}>
-        <Text style={{ color: colors.primary }}>{t('common.cancel')}</Text>
+      <Pressable onPress={onCancel}>
+        {({ focused }: PressableStateCallbackType) => {
+          const cancelStyle = [styles.quickConnectCancel, { backgroundColor: focused ? colors.primaryContainer : 'transparent' }];
+          return (
+            <View style={cancelStyle}>
+              <Text style={{ color: colors.primary }}>{t('common.cancel')}</Text>
+            </View>
+          );
+        }}
       </Pressable>
     </View>
   );
@@ -173,27 +181,33 @@ function QuickConnectPanel({
 
 /** One known local profile's avatar tile ("Select User" row) - switches to it directly (no
  * re-auth needed, it already has a stored access token) unless it's PIN-protected, in which
- * case it routes to PinEntryScreen instead. */
+ * case it routes to PinEntryScreen instead. A separate "Sign out" row beneath the label forgets
+ * this profile (`serverRepository.removeUser`) - its own focusable Pressable, not folded into
+ * the avatar's, so a remote user has to deliberately navigate down to it rather than risk
+ * hitting it via the same press that switches profiles. */
 function UserTile({
   user,
   avatarUri,
   busy,
   hasTVPreferredFocus,
   onPress,
+  onSignOut,
 }: {
   user: JellyfinUser;
   avatarUri?: string;
   busy: boolean;
   hasTVPreferredFocus?: boolean;
   onPress: () => void;
+  onSignOut: () => void;
 }) {
   const { colors } = useTheme();
+  const t = useT();
   return (
-    <Pressable hasTVPreferredFocus={hasTVPreferredFocus} onPress={onPress}>
-      {({ focused }: PressableStateCallbackType) => {
-        const avatarStyle = [styles.userAvatar, { borderColor: focused ? colors.border : 'transparent', backgroundColor: colors.surfaceVariant }];
-        return (
-          <View style={styles.userTile}>
+    <View style={styles.userTile}>
+      <Pressable hasTVPreferredFocus={hasTVPreferredFocus} onPress={onPress}>
+        {({ focused }: PressableStateCallbackType) => {
+          const avatarStyle = [styles.userAvatar, { borderColor: focused ? colors.border : 'transparent', backgroundColor: colors.surfaceVariant }];
+          return (
             <View style={avatarStyle}>
               {busy ? (
                 <ActivityIndicator color={colors.primary} />
@@ -203,13 +217,24 @@ function UserTile({
                 <Icon name="person" size={36} color={colors.onSurfaceVariant} />
               )}
             </View>
-            <Text numberOfLines={1} style={[styles.userTileLabel, { color: colors.onBackground }]}>
-              {user.name}
-            </Text>
-          </View>
-        );
-      }}
-    </Pressable>
+          );
+        }}
+      </Pressable>
+      <Text numberOfLines={1} style={[styles.userTileLabel, { color: colors.onBackground }]}>
+        {user.name}
+      </Text>
+      <Pressable onPress={onSignOut}>
+        {({ focused }: PressableStateCallbackType) => {
+          const signOutStyle = [styles.signOutRow, { backgroundColor: focused ? colors.primaryContainer : 'transparent' }];
+          return (
+            <View style={signOutStyle}>
+              <Icon name="logout" size={12} color={colors.onSurfaceVariant} />
+              <Text style={[styles.signOutLabel, { color: colors.onSurfaceVariant }]}>{t('setup.signOut')}</Text>
+            </View>
+          );
+        }}
+      </Pressable>
+    </View>
   );
 }
 
@@ -251,9 +276,18 @@ export function UserListScreen() {
   const { params } = useRoute<Route>();
   const entry = serverRepository.listServers().find((s) => s.server.id === params.serverId);
   const localUsers = entry?.users ?? [];
+  // Stable key for the avatar-fetch effect below - `entry` itself is a fresh object every
+  // render (`listServers()` isn't memoized), so depending on `entry` directly re-ran that
+  // effect (and its own `setAvatarByUserId` call) on every render, hammering `getCurrentUser()`
+  // in a tight infinite loop - confirmed on-device via a native SIGSEGV traced back to
+  // GET /Users/Me firing repeatedly within the same millisecond. Only changes when the server
+  // or the actual set of known users/tokens changes.
+  const avatarFetchKey = entry ? `${entry.server.url}|${entry.users.map((u) => `${u.id}:${u.accessToken}`).join(',')}` : '';
 
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const usernameField = useDeferredKeyboardFocus();
+  const passwordField = useDeferredKeyboardFocus();
   // Each known local profile's own avatar URL, keyed by user id - fetched with that profile's
   // own stored access token (see the effect below) rather than via getPublicUsers(), which
   // returns nothing useful whenever a server has public user listing disabled.
@@ -285,7 +319,8 @@ export function UserListScreen() {
     return () => {
       cancelled = true;
     };
-  }, [entry]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [avatarFetchKey]);
 
   if (!entry) {
     return (
@@ -311,6 +346,20 @@ export function UserListScreen() {
     } finally {
       setSwitchingUserId(null);
     }
+  };
+
+  // Forgets this local profile (`serverRepository.removeUser` already handles clearing the
+  // active session if it happened to be this one). `setAvatarByUserId` here is doing double
+  // duty - dropping the stale cached avatar and forcing this component to re-render, since
+  // `entry`/`localUsers` are read fresh from `serverRepository.listServers()` every render
+  // rather than through a subscribed store (see `avatarFetchKey`'s own comment above).
+  const signOutUser = async (user: JellyfinUser) => {
+    await serverRepository.removeUser(user);
+    setAvatarByUserId((prev) => {
+      const next = { ...prev };
+      delete next[user.id];
+      return next;
+    });
   };
 
   const login = async (name: string, pw: string) => {
@@ -346,6 +395,7 @@ export function UserListScreen() {
             busy={switchingUserId === user.id}
             hasTVPreferredFocus={index === 0}
             onPress={() => selectUser(user)}
+            onSignOut={() => signOutUser(user)}
           />
         ))}
         <AddUserTile hasTVPreferredFocus={localUsers.length === 0} onPress={() => setAddUserOpen(true)} />
@@ -353,35 +403,50 @@ export function UserListScreen() {
 
       {error ? <Text style={{ color: colors.error }}>{error}</Text> : null}
 
-      <Pressable onPress={() => navigation.navigate('ServerList')} style={[styles.button, styles.switchServersButton, { borderColor: colors.border }]}>
-        <Icon name="swap-horiz" size={18} color={colors.onSurfaceVariant} />
-        <Text style={{ color: colors.onSurfaceVariant }}>{t('setup.switchServers')}</Text>
+      <Pressable onPress={() => navigation.navigate('ServerList')}>
+        {({ focused }: PressableStateCallbackType) => {
+          const switchServersStyle = [styles.button, styles.switchServersButton, { borderColor: colors.border, backgroundColor: focused ? colors.primaryContainer : 'transparent' }];
+          return (
+            <View style={switchServersStyle}>
+              <Icon name="swap-horiz" size={18} color={colors.onSurfaceVariant} />
+              <Text style={{ color: colors.onSurfaceVariant }}>{t('setup.switchServers')}</Text>
+            </View>
+          );
+        }}
       </Pressable>
 
       {addUserOpen ? (
         <View style={styles.addUserForm}>
           <TextInput
+            ref={usernameField.ref}
             value={username}
             onChangeText={setUsername}
             placeholder={t('setup.username')}
             placeholderTextColor={colors.onSurfaceVariant}
             autoCapitalize="none"
+            showSoftInputOnFocus={usernameField.showSoftInputOnFocus}
+            onPress={usernameField.onPress}
+            onBlur={usernameField.onBlur}
             style={[styles.input, { borderColor: colors.border, color: colors.onSurface }]}
           />
           <TextInput
+            ref={passwordField.ref}
             value={password}
             onChangeText={setPassword}
             placeholder={t('setup.password')}
             placeholderTextColor={colors.onSurfaceVariant}
             secureTextEntry
+            showSoftInputOnFocus={passwordField.showSoftInputOnFocus}
+            onPress={passwordField.onPress}
+            onBlur={passwordField.onBlur}
             style={[styles.input, { borderColor: colors.border, color: colors.onSurface }]}
           />
-          <Pressable
-            hasTVPreferredFocus
-            onPress={() => login(username, password)}
-            style={[styles.button, { backgroundColor: colors.primary }]}
-          >
-            <Text style={{ color: colors.onPrimary }}>{t('setup.signIn')}</Text>
+          <Pressable hasTVPreferredFocus onPress={() => login(username, password)}>
+            {({ focused }: PressableStateCallbackType) => (
+              <View style={[styles.button, { backgroundColor: focused ? colors.onBackground : colors.primary }]}>
+                <Text style={{ color: focused ? colors.background : colors.onPrimary }}>{t('setup.signIn')}</Text>
+              </View>
+            )}
           </Pressable>
 
           {quickConnecting ? (
@@ -395,8 +460,15 @@ export function UserListScreen() {
               }}
             />
           ) : (
-            <Pressable onPress={() => { setError(null); setQuickConnecting(true); }} style={quickConnectButtonStyle}>
-              <Text style={{ color: colors.primary }}>{t('setup.signInWithCode')}</Text>
+            <Pressable onPress={() => { setError(null); setQuickConnecting(true); }}>
+              {({ focused }: PressableStateCallbackType) => {
+                const codeButtonStyle = [...quickConnectButtonStyle, { backgroundColor: focused ? colors.primaryContainer : 'transparent' }];
+                return (
+                  <View style={codeButtonStyle}>
+                    <Text style={{ color: colors.primary }}>{t('setup.signInWithCode')}</Text>
+                  </View>
+                );
+              }}
             </Pressable>
           )}
         </View>
@@ -421,6 +493,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   userTileLabel: { fontSize: 14, fontWeight: '600' },
+  signOutRow: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: 8, borderRadius: 6 },
+  signOutLabel: { fontSize: 11 },
   input: { borderWidth: 1, borderRadius: 8, padding: 12, fontSize: 16 },
   button: { padding: 12, borderRadius: 8, alignItems: 'center' },
   switchServersButton: { flexDirection: 'row', justifyContent: 'center', gap: 8, alignSelf: 'center', paddingHorizontal: 20 },
