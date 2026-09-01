@@ -77,6 +77,10 @@ export interface PlaybackSource {
   playSessionId: string;
   /** Audio/subtitle/video streams available on this source, for the track-picker UI. */
   mediaStreams: MediaStream[];
+  /** Only set for a Live TV source that required `openLiveStream` (see the comment on that call
+   * below) - pass to `closeLiveStream` on teardown/channel-switch to release the tuner. Never
+   * set for VOD, which doesn't go through that path. */
+  liveStreamId?: string;
 }
 
 export interface NegotiatePlaybackOptions {
@@ -125,9 +129,43 @@ export async function negotiatePlayback(
     },
   });
 
-  const source = data.MediaSources?.[0];
+  let source = data.MediaSources?.[0];
   const playSessionId = data.PlaySessionId ?? '';
   if (!source?.Id) {
+    throw new Error('Server returned no playable media source');
+  }
+
+  // Confirmed on-device as the actual root cause of a long-standing Live TV bug (see
+  // LiveTvPlayerScreen.tsx's own comment on `loadVideoSource` for the full diagnostic story):
+  // `RequiresOpening: true` here isn't informational - the tuner/proxy source behind
+  // `TranscodingUrl`/`Path` genuinely isn't running yet. Skipping this call (the original code
+  // did) meant `live.m3u8` would hang far longer than any reasonable client timeout - confirmed
+  // by curling it directly (60s, zero bytes) - while the *same* channel opened properly this
+  // way returns a valid playlist in a few seconds. `getPostedPlaybackInfo`'s `MediaSources[0]`
+  // is only a preview: placeholder `MediaStreams` (`Index: -1`, no codec) and a generic
+  // `TranscodingUrl` with none of the source's real resolution/bitrate baked in.
+  // `openLiveStream`'s response is the one Jellyfin has actually probed and started - use it in
+  // place of the preview from here on. VOD never sets `RequiresOpening`, so this is unreachable
+  // for VOD regardless of `allowDirectPlayback`.
+  let liveStreamId: string | undefined;
+  if (options.allowDirectPlayback && source.RequiresOpening && source.OpenToken) {
+    const { data: openData } = await getMediaInfoApi(api).openLiveStream({
+      openLiveStreamDto: {
+        OpenToken: source.OpenToken,
+        UserId: userId,
+        ItemId: itemId,
+        PlaySessionId: playSessionId,
+        DeviceProfile: DEVICE_PROFILE,
+        EnableDirectPlay: options.allowDirectPlayback,
+        EnableDirectStream: options.allowDirectPlayback,
+      },
+    });
+    if (openData.MediaSource) {
+      source = openData.MediaSource;
+      liveStreamId = source.LiveStreamId ?? undefined;
+    }
+  }
+  if (!source.Id) {
     throw new Error('Server returned no playable media source');
   }
 
@@ -140,6 +178,7 @@ export async function negotiatePlayback(
       mediaSourceId: source.Id,
       playSessionId,
       mediaStreams,
+      liveStreamId,
     };
   }
 
@@ -155,6 +194,7 @@ export async function negotiatePlayback(
       mediaSourceId: source.Id,
       playSessionId,
       mediaStreams,
+      liveStreamId,
     };
   }
 
@@ -170,6 +210,14 @@ export async function negotiatePlayback(
     );
   }
   throw new Error('Server did not return a playable stream URL');
+}
+
+/** Releases a Live TV tuner/proxy source opened via `negotiatePlayback`'s `openLiveStream` call
+ * above - mirrors Jellyfin's own web client calling this on channel-switch/stop. Only ever
+ * called with a `PlaybackSource.liveStreamId` that came back set, so this is a no-op for VOD
+ * (which never opens one) by construction, not by a check here. */
+export async function closeLiveStream(liveStreamId: string): Promise<void> {
+  await getMediaInfoApi(jellyfinClient.api).closeLiveStream({ liveStreamId });
 }
 
 /** The episode Jellyfin's own "Next Up" would recommend after this series' currently-playing

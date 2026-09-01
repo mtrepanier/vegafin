@@ -1,5 +1,5 @@
 import { BaseItemKind } from '@jellyfin/sdk/lib/generated-client/models/base-item-kind';
-import { formatClockTime, formatFullDate, remainingRuntimeMs, formatHeroInfoLine, formatSeasonLabel } from '../../src/util/format';
+import { formatClockTime, formatFullDate, formatWeekdayDate, remainingRuntimeMs, formatHeroInfoLine, formatSeasonLabel } from '../../src/util/format';
 
 describe('formatClockTime', () => {
   it('formats as h:mm AM/PM', () => {
@@ -14,6 +14,12 @@ describe('formatClockTime', () => {
 describe('formatFullDate', () => {
   it('formats an ISO date as "Mon D, YYYY"', () => {
     expect(formatFullDate(new Date(2026, 5, 19).toISOString(), 'en')).toBe('Jun 19, 2026');
+  });
+});
+
+describe('formatWeekdayDate', () => {
+  it('formats a date as "Weekday, Mon D", no year', () => {
+    expect(formatWeekdayDate(new Date(2026, 7, 31), 'en')).toBe('Mon, Aug 31');
   });
 });
 

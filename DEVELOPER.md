@@ -116,6 +116,22 @@ The actual, current architecture (confirmed working end-to-end on the Vega Virtu
   `KeplerVideoView`, paired with a bare `VideoPlayer` instance and fully custom on-screen
   controls (`screens/playback/PlaybackScreens.tsx`) — this is what makes hardware remote
   events (via `useTVEventHandler`) actually reach the player.
+  - **Not guaranteed to fire `onSurfaceViewCreated` only once per surface** - confirmed
+    on-device via a generation/"attempt" counter that briefly lived in the loading status text
+    itself (`player.preparingPlaybackAttempt`/`startingVideoAttempt`, since removed - see below)
+    reaching 2 for what was still the same physical surface, since this platform's own
+    `systemd-journald` rate-limits and silently drops log bursts, making the UI the only
+    reliable place to have caught it. `PlaybackScreens.tsx`'s `onSurfaceViewCreated` guards
+    against re-running `createPlayer` for a duplicate firing (`surfaceHandleRef.current ===
+    handle` check) - without it, the redundant re-fire tears down the in-flight Shaka player
+    while its own `load()` is still pending, orphaning that promise; the load then hangs
+    forever with no error. **Correction**: the on-screen attempt counter itself was removed
+    after user feedback that "(attempt 1)" reads as an unpolished debug leftover in the normal
+    loading UI - true, but worth remembering it was a real diagnostic that caught a real bug
+    precisely because logs couldn't be trusted here; if a similar duplicate-firing/hung-load
+    symptom turns up again, temporarily surfacing `playbackGenerationRef.current`/`generation`
+    in the status text (or via `console.log`, accepting it may get dropped) is still the
+    playbook, not device logs alone.
 - A vendored, compiled Shaka Player (`src/w3cmedia/shakaplayer/`, MSE-based adaptive
   streaming) drives HLS playback, wrapped by `ShakaPlayer.ts` and a set of DOM/URL/fetch
   polyfills (`src/w3cmedia/polyfills/`) needed to run Shaka in Kepler's JS environment. This
@@ -280,11 +296,33 @@ wanted.
   LiveTV pipeline typically already remuxes tuner input to HLS on its own end before this app
   ever asks. VOD's own call site never passes the option, so its exact previously-tested
   behavior (transcode-only, unconditionally) is unchanged.
-- **The lower-level `OpenLiveStream`/`LiveStreamId`/`closeLiveStream` cleanup path exists in the
-  SDK too, but isn't wired up here** - it applies to a raw tuner-backed stream opened directly,
-  not the HLS URL (whether transcoded or direct-play/stream) this negotiation returns either
-  way. If channel-switching turns out to exhaust tuners on some servers, that's the first place
-  to look.
+- **Correction: a channel would load its manifest and then never actually play - root cause was
+  skipping `openLiveStream`, not anything about Shaka or HLS.** `getPostedPlaybackInfo`'s
+  `MediaSources[0]` can come back with `RequiresOpening: true` and an `OpenToken` - this isn't
+  informational, it means the tuner/proxy source behind `TranscodingUrl`/`Path` genuinely isn't
+  running yet. The original code (like the paragraph above still correctly describes for the
+  *negotiation* shape) took that preview source's URL and used it directly. **Confirmed on-device
+  and by curling the server directly**: `live.m3u8` for an unopened source hangs indefinitely (60s,
+  zero bytes back) - the *same* channel, opened first, returns a valid playlist in a few seconds.
+  Two dead ends chased first before finding this, worth recording so they aren't retried: (1)
+  routing Live TV through the native player instead of Shaka/MSE, on the theory that MSE itself
+  was the problem - it wasn't; the native (non-MSE) HLS player on this platform doesn't support
+  MPEG-TS-segmented HLS at all (the container Jellyfin's transcoder always uses here), so this
+  failed immediately and unconditionally, live or not; (2) forcing Shaka's `hls.sequenceMode:
+  true` for Live TV, on the theory that ffmpeg's live remux has unreliable
+  `EXT-X-PROGRAM-DATE-TIME` - plausible-sounding, but every device test still failed at almost
+  exactly the same ~20s mark regardless of this setting, which was the actual tell that the
+  problem was upstream of Shaka entirely (the manifest fetch itself, not how Shaka stitched what
+  it got). Both were reverted. **Actual fix**: `negotiatePlayback` now calls
+  `getMediaInfoApi().openLiveStream()` when `RequiresOpening`/`OpenToken` are set (Live TV only -
+  VOD never sets `RequiresOpening`) and uses *that* response's `MediaSource` - which also turned
+  out to carry real probed codec/resolution info the preview source's placeholder
+  `MediaStreams` (`Index: -1`, no codec) never had - in place of the preview. `PlaybackSource`
+  gained a `liveStreamId` field (only ever set for Live TV) so `LiveTvPlayerScreen.tsx` can call
+  the new `closeLiveStream` export on every teardown path - channel switch, screen exit, and the
+  belt-and-suspenders unmount cleanup - releasing the tuner. Without this, channel-switching would
+  leak one open tuner per switch, exactly the risk this section originally flagged before being
+  wired up.
 - **A separate, much simpler player (`LiveTvPlayerScreen.tsx`), not a parameterized reuse of
   `PlaybackScreens.tsx`'s `PlaybackBody`.** A channel has no duration, can't be seeked or
   resumed, and has no Next Up/Skip Intro-Outro (both depend on a finite timeline or per-item
@@ -298,6 +336,41 @@ wanted.
   No seek bar, no track picker, no resume position - reported progress is just elapsed
   wall-clock watch time since tune-in (`Date.now() - watchStartedAtRef.current`), the same
   approximation other Jellyfin clients use for a live session, since there's nothing to resume.
+- **Correction: a channel's stream loaded and kept buffering forever without ever playing -
+  fixed with `hls.sequenceMode: true` on Shaka, scoped to Live TV only.** First confirmed
+  on-device as a real, reproducible bug, not a negotiation/codec-support problem: a channel's
+  HLS manifest parsed fine through Shaka, and `SourceBuffer.appendBuffer` kept receiving real
+  multi-megabyte segment data continuously for over a minute, but the media element never once
+  fired `playing` - it just sat "waiting" until this screen's own load timeout gave up, even
+  though data was genuinely flowing the whole time. (A red herring ruled out along the way:
+  `MimeTypeRegistry`'s `console.error("the container only supports audio codecs...")` looked
+  alarming in the device log but is just Shaka's own codec-support probe checking a video codec
+  against an audio-only mime essence first, by design - followed immediately by the matching
+  video-mime check succeeding, and it fires during VOD's working playback too.) VOD's own
+  transcoded HLS through the same Shaka code path plays back fine, which isolated the problem to
+  something about Live TV's specific stream, not HLS or Shaka in general.
+  - **A tempting first fix, tried and confirmed wrong**: route Live TV through the native player
+    (`activePlayer.src`/`.load()`) instead of Shaka/MSE at all, on the theory that sidestepping
+    MSE would sidestep whatever was Shaka-specific about the hang. This failed immediately and
+    more definitively than the original bug - `error` fired right away with code 4
+    (`MEDIA_ERR_SRC_NOT_SUPPORTED`), confirmed on two separate channels via on-device logs. The
+    stream is `SegmentContainer=ts` (MPEG-TS segments) - the exact same container VOD's
+    transcoded output also uses, successfully, through Shaka - so this ruled out "live vs. VOD"
+    as the native player's objection and pointed to a much blunter fact: this platform's native
+    (non-MSE) HLS player doesn't support MPEG-TS-segmented HLS at all. Reverted in full.
+  - **Actual fix**: `ShakaPlayer.ts`'s player config hardcoded `manifest.hls.sequenceMode:
+    false` (timestamp-based segment stitching) for every caller. Jellyfin's live-TV transcode is
+    ffmpeg remuxing a live/growing source in real time, which commonly produces unreliable or
+    missing `EXT-X-PROGRAM-DATE-TIME` across playlist refreshes - VOD's transcode of a static,
+    already-complete file doesn't have that problem, which is exactly why VOD never hit this.
+    With bad timing info, Shaka's timestamp-based stitching can keep accepting and buffering
+    segment data while placing it somewhere that never lines up with the actual playhead,
+    producing precisely this symptom: buffered data grows forever, `playing` never fires.
+    `sequenceMode: true` stitches segments by arrival order instead of trusting their
+    timestamps, which is Shaka's own documented workaround for exactly this class of live-HLS
+    content. Scoped via a new `hlsSequenceMode` option on `ShakaPlayerSettings` (default `false`,
+    preserving VOD's exact tested behavior) that only `LiveTvPlayerScreen.tsx` sets to `true` -
+    `PlaybackScreens.tsx`'s own Shaka usage is completely unchanged.
 - **Channel switching remounts the player body via `key={channelId}`**, the same trick
   `PlaybackScreen`'s own Next Up already uses to swap to a new episode - the outer
   `LiveTvPlayerScreen` holds `channelId` state and the already-fetched channel list (so
@@ -342,6 +415,17 @@ wanted.
   - Fetches a fixed 4-hour window (`GUIDE_WINDOW_HOURS`) rather than paged/scrollable time
     navigation - "browse tonight's primetime lineup" is a real feature this doesn't have yet,
     not an oversight. No "now" position indicator line yet either, for the same reason.
+  - **Fixed a real bug found on-device**: the window's `start` was just `new Date()` - whatever
+    odd minute the guide happened to be opened at - so the shared header's every-30-minutes
+    labels (`TIME_LABEL_INTERVAL_MIN`, `guideTimeLabels`) read things like 14:47, 15:17,
+    15:47... instead of the usual TV-guide :00/:30 marks every other client lines its grid up
+    on. `guideTimeLabels` itself was never the problem - it correctly starts labeling from
+    whatever `windowStart` it's given, at the given interval; the bug was in what `start` this
+    screen fed it. Fixed with a small pure helper, `floorToGuideInterval(date, intervalMinutes)`
+    (`liveTv.ts`), that rounds `start` down to the nearest `TIME_LABEL_INTERVAL_MIN` boundary
+    before it's used for both the fetch window and the header labels - unit-tested directly
+    rather than only on-device, since it's plain date arithmetic with no native/Kepler
+    dependency.
   - **Fixed a real bug found via on-device testing right after this shipped:** channel logos
     rendered at full natural pixel size instead of scaled to fit, bleeding out of their row
     into the timeline area. Cause: `channelLogo`'s `width: '100%'` had no concrete parent width
@@ -367,11 +451,61 @@ wanted.
     a fairly universal convention (all of the reference clients compared against showed one),
     and `Clock.tsx` was already a plain, screen-agnostic component with no Home-specific
     dependencies, so this was a straightforward reuse, not a new component.
-- **Tapping any program cell - including a channel with no guide data at all - tunes that
-  channel live, regardless of which cell was pressed.** There's no way to jump to a future
-  program without recording support in scope, so every tap means the same thing; a channel
-  with an empty guide window still renders one placeholder cell (`livetv.noGuideData`) so it
-  stays reachable rather than silently disappearing from the list.
+- **Correction: tapping a real program cell now opens a dimmed-backdrop modal card
+  (`ProgramInfoOverlay.tsx`) instead of tuning in immediately.** The original behavior - any
+  tap tunes the channel live, regardless of which cell was pressed - matched having no way to
+  jump to a future program at all; it didn't hold up once compared against reference clients,
+  which all show a program's own title/time/overview first and only play from there. The
+  overlay shows title, `Mon, Aug 31 7:00 PM - 11:30 PM`-style time range (new
+  `formatWeekdayDate`, `util/format.ts`) plus channel, and `Overview` when the server has one -
+  deliberately no "Record" action the way a reference client's own version has, since
+  recording/DVR stays out of scope for this slice (see below). **Play only appears when
+  `isProgramAiring(program, now)` is true for that exact program** - there's still no seeking
+  into a future or past slot, so a program outside its own air window gets no Play button
+  rather than one that would just fail; tapping Play there closes the overlay and tunes in
+  exactly like the old direct-tap behavior did. **A channel's own `livetv.noGuideData`
+  placeholder cell still tunes in directly, skipping the overlay entirely** - there's no
+  program data to show for it, and it's inherently "live now" with no scheduled boundary, so an
+  info screen there would just be an empty extra step before the same Play action.
+  - **Closing the overlay reuses the exact `BackHandler`-absorption pattern
+    `LiveTvPlayerScreen.tsx` uses for its own back-button bug** (see the Slideshow/dual-listener
+    gotcha above for the full mechanism) - the overlay is plain component state here, not a
+    navigation entry, so without absorbing the hardware back press first, `NavigationContainer`'s
+    own automatic listener would leave the guide entirely on the first back press while the
+    overlay was still open, rather than just closing it. The handler here returns `false`
+    (instead of always `true`) once nothing's selected, so it steps out of the way and the
+    guide's own exit-to-Home behavior is completely unaffected.
+  - **Fixed alongside, found via the same on-device comparison against reference clients**: 30-
+    minute cells were noticeably cramped (`HOUR_WIDTH`/`MIN_CELL_WIDTH` doubled from their first
+    values, 240/70 → 480/140) and a program's title was left to wrap across 2 lines
+    (`numberOfLines`) instead of eliding cleanly on 1 - the full title was only ever reachable by
+    squinting at a wrapped 2-line cell before this, now it's one clean truncated line with the
+    full title always available a tap away in the overlay above.
+  - **Correction, found on-device right after - twice.** First symptom: some cells still looked
+    unrounded/merged into their neighbor. First fix, incomplete: added `overflow: 'hidden'` to
+    the cell style on the theory that overflowing text was bleeding past the rounded bounds -
+    real (and worth keeping regardless), but not what was actually happening here, confirmed by
+    the symptom surviving it unchanged. **Actual cause**: `layoutGuideCells`' own `minWidth`
+    enforcement doesn't know where the *next* program starts - cells are positioned
+    independently (`left`/`width` computed from each program's own real start/end, not flowed
+    one after another), so a short program (a sign-off, a public-service ID) widened up to
+    `minWidth` could extend right past where the next program's own cell begins. The next cell,
+    painted afterward in `programs` order, simply rendered on top of the overlap - what looked
+    like a missing rounded corner was really the short cell's own right edge hidden under a
+    flat, unrounded-looking seam from the cell on top of it. Fixed by capping the width boost to
+    the actual gap before the next program starts (`layoutGuideCells`'s new `availableWidth`) -
+    a short program still gets the readability boost when there's room for it, just never past
+    where its neighbor actually begins. A narrow cell (`width < 110`) also drops the "ON NOW"
+    tag entirely rather than fighting the title for the same sliver of space, since the tag
+    alone was sometimes wider than the cell.
+  - **Correction: currently-airing cell background changed to a solid, high-contrast fill.**
+    First version used `colors.secondaryContainer` as a subtle tint, distinct from a focused
+    cell's `primaryContainer` in theory but not visually different enough from a plain cell's
+    `surfaceVariant` at a glance - confirmed on-device as too subtle to read as "this one's live"
+    across a full grid. Now `colors.primary`/`onPrimary` filled (the same "LIVE" brand color used
+    elsewhere, e.g. `LiveTvPlayerScreen.tsx`'s own live badge) when unfocused; a focused cell
+    still wins visually either way (`primaryContainer`), so a live-and-focused cell still reads
+    as "focused," not as a color clash between the two states.
 - **The side nav's library row for a `CollectionType.Livetv` library now opens this guide
   instead of the generic `ItemGrid`** (`MainDrawerNavigator.tsx`) - a plain poster grid doesn't
   suit channels/programs the way it does every other library type. `sortLibrariesByType`
@@ -1078,6 +1212,36 @@ confirmed-broken code was changed. If it does turn up on one of those screens, t
 "stop handling `'back'` there" (their cleanup would never run) - it'd need to prevent the
 automatic handler from *also* firing for that screen, not just out-dedupe it.
 
+**This prediction came true on `LiveTvPlayerScreen`**, confirmed on-device: back from a live
+channel correctly closed the player down to the guide, then a second, unrelated pop (same
+mechanism as above) fell through into the Drawer's `backBehavior="history"` and landed on Home
+instead. First fix, incomplete: the outer `LiveTvPlayerScreen` (not the inner, per-channel
+`LiveTvPlayerBody`, so it stays registered across a channel switch) registers its own
+`BackHandler.addEventListener('hardwareBackPress', () => true)` for as long as it's mounted,
+absorbing the hardware back press before `NavigationContainer`'s own listener ever sees it -
+correct in principle (RN's `BackHandler` stops calling listeners as soon as one returns `true`,
+and a later-registered listener runs first), but the bug survived it on-device anyway.
+
+**Actual cause, found via the same `console.log`-before-`goBack()` technique the Slideshow gotcha
+used**: a single physical back press was producing *two* `hardwareBackPress` deliveries, not one
+- but the second one didn't arrive until roughly 80ms after the first `goBack()` had already
+popped `LiveTvPlayback` off the stack and unmounted `LiveTvPlayerScreen`, tearing down its
+absorber with it. By the time the second delivery landed, nothing was left registered to catch
+it, so it fell through to `NavigationContainer`'s own listener exactly as before - the absorber
+was correct, it just wasn't *there* for long enough. Confirmed by logging every registration/
+removal/fire across both `LiveTvGuideScreen`'s own `BackHandler` listener (added for the program
+info overlay, see below) and `LiveTvPlayerScreen`'s: the second delivery is what
+`LiveTvGuideScreen`'s listener caught, well after `LiveTvPlayerScreen`'s own "absorber removed"
+log line. **Actual fix**: delay the real `subscription.remove()` by 500ms in the cleanup
+function instead of removing it immediately on unmount - keeps absorbing through that window
+without leaking the listener indefinitely. `LiveTvPlayerBody`'s own manual Kepler-`HWEvent`-
+driven `'back'` handling (stop playback, release the tuner via `closeLiveStream`, then navigate)
+is a completely separate bridge and keeps working exactly as before - still the only thing that
+actually calls `goBack()`. `PlaybackScreens.tsx` hasn't reproduced either version of this bug
+yet, so it's left alone per the same "only touch confirmed-broken code" reasoning as above - if
+it ever does, the grace-period version of the fix, not just the plain absorber, is the one to
+copy.
+
 ### Series unwatched-episode badge (`seriesBadge.ts`)
 
 Every card list that can show a Series item (Home rows, library grids, Favorites, "More Like
@@ -1702,9 +1866,10 @@ src/
     playback/                 PlaybackScreen, PlaybackListScreen (KeplerVideoSurfaceView + ShakaPlayer),
                                NextUpCard.tsx - see Next Up prompt above; SkipSegmentButton.tsx -
                                see Skip Intro/Outro above
-    livetv/                   LiveTvGuideScreen.tsx, LiveTvPlayerScreen.tsx (its own separate,
-                               simpler KeplerVideoSurfaceView + ShakaPlayer lifecycle) - see Live
-                               TV guide above
+    livetv/                   LiveTvGuideScreen.tsx, ProgramInfoOverlay.tsx (per-program detail,
+                               opened by tapping a guide cell), LiveTvPlayerScreen.tsx (its own
+                               separate, simpler KeplerVideoSurfaceView + ShakaPlayer lifecycle) -
+                               see Live TV guide above
     settings/                 SettingsScreen.tsx (real - see Settings above) plus the
                                still-Phase-2-stub HomeSettings/SubtitleSettings/
                                UserAppPreferences screens; SettingsToggle/SettingsStepper/

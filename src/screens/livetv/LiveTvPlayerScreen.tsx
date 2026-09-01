@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View, type PressableStateCallbackType } from 'react-native';
+import { ActivityIndicator, BackHandler, Pressable, StyleSheet, Text, View, type PressableStateCallbackType } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@amazon-devices/react-navigation__native';
 import { useKeplerAppStateManager, useTVEventHandler, type HWEvent } from '@amazon-devices/react-native-kepler';
 import { KeplerVideoSurfaceView, VideoPlayer } from '@amazon-devices/react-native-w3cmedia';
@@ -9,7 +9,7 @@ import { useTheme } from '../../theme/ThemeContext';
 import { useCurrentUser } from '../../services/storage/ServerRepositoryContext';
 import { useT } from '../../i18n/useTranslation';
 import { useLanguage } from '../../i18n/useLanguage';
-import { negotiatePlayback, reportPlaybackProgress, reportPlaybackStart, reportPlaybackStopped, type PlaybackSource } from '../../services/jellyfin/playback';
+import { negotiatePlayback, reportPlaybackProgress, reportPlaybackStart, reportPlaybackStopped, closeLiveStream, type PlaybackSource } from '../../services/jellyfin/playback';
 import { fetchLiveTvChannels, formatProgramTimeRange } from '../../services/jellyfin/liveTv';
 import { unloadPlayer } from '../../w3cmedia/playerLifecycle';
 import { ShakaPlayer } from '../../w3cmedia/shakaplayer/ShakaPlayer';
@@ -161,7 +161,7 @@ function LiveTvPlayerBody({ channel, channels, onChangeChannel, onExit }: LiveTv
       const nextSource = await negotiatePlayback(userId, channel.Id, { allowDirectPlayback: true });
       sourceRef.current = nextSource;
       setSource(nextSource);
-      setStatusText(t('player.startingVideoAttempt', { attempt: playbackGenerationRef.current }));
+      setStatusText(t('player.startingVideo'));
       await loadVideoSource(activePlayer, nextSource);
       activePlayer.play();
       isPausedRef.current = false;
@@ -198,6 +198,13 @@ function LiveTvPlayerBody({ channel, channels, onChangeChannel, onExit }: LiveTv
           clearInterval(progressTimerRef.current);
           progressTimerRef.current = null;
         }
+        // Release the previous channel's tuner before opening the next one - a channel switch
+        // reaches this branch instead of onSurfaceViewDestroyed/the unmount cleanup below, so
+        // without this a fast succession of channel changes would leak one open tuner per
+        // switch (see negotiatePlayback's own comment on why opening is required at all).
+        if (sourceRef.current?.liveStreamId) {
+          closeLiveStream(sourceRef.current.liveStreamId).catch(() => {});
+        }
         await unloadAdaptivePlayer();
         try {
           oldPlayer.pause();
@@ -214,7 +221,7 @@ function LiveTvPlayerBody({ channel, channels, onChangeChannel, onExit }: LiveTv
       setError(false);
       setErrorDetail(null);
       setPaused(true);
-      setStatusText(t('player.preparingPlaybackAttempt', { attempt: generation }));
+      setStatusText(t('player.preparingPlayback'));
       setReady(false);
       setShowControls(true);
       clearControlsHideTimer();
@@ -332,6 +339,9 @@ function LiveTvPlayerBody({ channel, channels, onChangeChannel, onExit }: LiveTv
           positionMs: Date.now() - watchStartedAtRef.current,
         }).catch(() => {});
       }
+      if (src?.liveStreamId) {
+        closeLiveStream(src.liveStreamId).catch(() => {});
+      }
       try {
         activePlayer.pause();
         activePlayer.clearSurfaceHandle(handle);
@@ -363,6 +373,9 @@ function LiveTvPlayerBody({ channel, channels, onChangeChannel, onExit }: LiveTv
           playSessionId: src.playSessionId,
           positionMs: Date.now() - watchStartedAtRef.current,
         }).catch(() => {});
+      }
+      if (src?.liveStreamId) {
+        closeLiveStream(src.liveStreamId).catch(() => {});
       }
       try {
         activePlayer.pause();
@@ -540,6 +553,31 @@ export function LiveTvPlayerScreen() {
       cancelled = true;
     };
   }, [userId]);
+
+  // Absorbs the hardware back button for as long as this screen is mounted, plus a short grace
+  // period after it unmounts. Without any of this, `@amazon-devices/react-navigation__native`'s
+  // own `NavigationContainer` back listener (RN's `BackHandler`, entirely separate from Kepler's
+  // `HWEvent`/`useTVEventHandler` system `LiveTvPlayerBody` uses for its own manual 'back'
+  // handling below) independently pops the same navigation stack a second time per press -
+  // confirmed on-device as the cause of a real bug: back correctly closed this screen down to
+  // the guide, then the second, unrelated pop had nothing left on the root stack and fell
+  // through into the Drawer navigator's own `backBehavior="history"`, landing on Home instead -
+  // see DEVELOPER.md's Live TV guide section (and its Slideshow gotcha, which first found this
+  // exact two-listener conflict) for the full story.
+  //
+  // The grace period turned out to be load-bearing, confirmed via on-device logging
+  // (`BackHandler.addEventListener` fires in reverse-registration order, absorbing here should
+  // otherwise be enough on its own): the second `hardwareBackPress` for a single physical press
+  // didn't arrive until ~80ms *after* the first `goBack()` had already unmounted this screen -
+  // removing the subscription immediately left nothing registered to catch it, so it fell
+  // through exactly as before. Delaying the actual `subscription.remove()` keeps absorbing
+  // through that window without leaking the listener indefinitely.
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => true);
+    return () => {
+      setTimeout(() => subscription.remove(), 500);
+    };
+  }, []);
 
   if (!channels) {
     return (

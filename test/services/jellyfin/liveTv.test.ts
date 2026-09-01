@@ -15,6 +15,7 @@ import {
   isProgramAiring,
   layoutGuideCells,
   guideTimeLabels,
+  floorToGuideInterval,
 } from '../../../src/services/jellyfin/liveTv';
 import { ChannelType } from '@jellyfin/sdk/lib/generated-client/models/channel-type';
 
@@ -174,6 +175,35 @@ describe('layoutGuideCells', () => {
 
     expect(layoutGuideCells([noDates, beforeWindow], windowStart, windowEnd, 10, 0)).toEqual([]);
   });
+
+  it('caps the minimum-width boost so a short program never overlaps the next one', () => {
+    // p1 runs 20:00-20:01 (1 min = 10px natural width); p2 starts right after, at 20:01.
+    // A naive minWidth of 80 would push p1's cell to 80px wide, overlapping 70px into p2's cell.
+    const p1 = { Id: 'p1', StartDate: '2026-01-01T20:00:00Z', EndDate: '2026-01-01T20:01:00Z' };
+    const p2 = { Id: 'p2', StartDate: '2026-01-01T20:01:00Z', EndDate: '2026-01-01T20:30:00Z' };
+
+    const [cell1, cell2] = layoutGuideCells([p1, p2], windowStart, windowEnd, 10, 80);
+
+    expect(cell1.width).toBe(10); // capped to the 1-minute gap before p2, not boosted to 80
+    expect(cell1.left + cell1.width).toBeLessThanOrEqual(cell2.left);
+  });
+
+  it('still boosts to the full minimum width when there is enough room before the next program', () => {
+    const p1 = { Id: 'p1', StartDate: '2026-01-01T20:00:00Z', EndDate: '2026-01-01T20:01:00Z' };
+    const p2 = { Id: 'p2', StartDate: '2026-01-01T20:30:00Z', EndDate: '2026-01-01T21:00:00Z' };
+
+    const [cell1] = layoutGuideCells([p1, p2], windowStart, windowEnd, 10, 80);
+
+    expect(cell1.width).toBe(80);
+  });
+
+  it('does not cap the last program in the list, which has nothing after it to overlap', () => {
+    const program = { Id: 'p1', StartDate: '2026-01-01T20:00:00Z', EndDate: '2026-01-01T20:01:00Z' };
+
+    const [cell] = layoutGuideCells([program], windowStart, windowEnd, 10, 80);
+
+    expect(cell.width).toBe(80);
+  });
 });
 
 describe('guideTimeLabels', () => {
@@ -196,5 +226,16 @@ describe('guideTimeLabels', () => {
   it('returns an empty array for a zero-length window', () => {
     const t = new Date('2026-01-01T20:00:00Z');
     expect(guideTimeLabels(t, t, 30)).toEqual([]);
+  });
+});
+
+describe('floorToGuideInterval', () => {
+  it('rounds down to the nearest interval boundary and clears seconds/ms', () => {
+    expect(floorToGuideInterval(new Date('2026-01-01T14:47:23.500Z'), 30).toISOString()).toBe('2026-01-01T14:30:00.000Z');
+    expect(floorToGuideInterval(new Date('2026-01-01T14:12:00.000Z'), 30).toISOString()).toBe('2026-01-01T14:00:00.000Z');
+  });
+
+  it('leaves a time already on the boundary unchanged, other than clearing seconds/ms', () => {
+    expect(floorToGuideInterval(new Date('2026-01-01T14:30:45.000Z'), 30).toISOString()).toBe('2026-01-01T14:30:00.000Z');
   });
 });

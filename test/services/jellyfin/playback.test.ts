@@ -1,4 +1,6 @@
 const mockGetPostedPlaybackInfo = jest.fn();
+const mockOpenLiveStream = jest.fn();
+const mockCloseLiveStream = jest.fn();
 const mockReportPlaybackStart = jest.fn();
 const mockReportPlaybackProgress = jest.fn();
 const mockReportPlaybackStopped = jest.fn();
@@ -15,7 +17,11 @@ jest.mock('../../../src/services/jellyfin/JellyfinClient', () => ({
 }));
 
 jest.mock('@jellyfin/sdk/lib/utils/api/media-info-api', () => ({
-  getMediaInfoApi: () => ({ getPostedPlaybackInfo: mockGetPostedPlaybackInfo }),
+  getMediaInfoApi: () => ({
+    getPostedPlaybackInfo: mockGetPostedPlaybackInfo,
+    openLiveStream: mockOpenLiveStream,
+    closeLiveStream: mockCloseLiveStream,
+  }),
 }));
 
 jest.mock('@jellyfin/sdk/lib/utils/api/playstate-api', () => ({
@@ -41,6 +47,7 @@ import {
   reportPlaybackStopped as reportStopped,
   fetchNextUpEpisode,
   fetchMediaSegments,
+  closeLiveStream,
 } from '../../../src/services/jellyfin/playback';
 import { PlayMethod } from '@jellyfin/sdk/lib/generated-client/models/play-method';
 import { MediaSegmentType } from '@jellyfin/sdk/lib/generated-client/models/media-segment-type';
@@ -198,6 +205,61 @@ describe('negotiatePlayback', () => {
 
       await expect(negotiatePlayback('user-1', 'channel-1')).rejects.toThrow('Server did not return a playable stream URL');
     });
+
+    describe('RequiresOpening (tuner not yet started)', () => {
+      it('opens the live stream and uses its resolved MediaSource instead of the PlaybackInfo preview', async () => {
+        mockGetPostedPlaybackInfo.mockResolvedValue({
+          data: {
+            PlaySessionId: 'sess-preview',
+            MediaSources: [{ Id: 'src-1', RequiresOpening: true, OpenToken: 'open-token-1', TranscodingUrl: '/preview.m3u8' }],
+          },
+        });
+        mockOpenLiveStream.mockResolvedValue({
+          data: { MediaSource: { Id: 'src-1', LiveStreamId: 'live-stream-1', TranscodingUrl: '/opened.m3u8' } },
+        });
+
+        const result = await negotiatePlayback('user-1', 'channel-1', { allowDirectPlayback: true });
+
+        expect(mockOpenLiveStream).toHaveBeenCalledWith({
+          openLiveStreamDto: expect.objectContaining({
+            OpenToken: 'open-token-1',
+            UserId: 'user-1',
+            ItemId: 'channel-1',
+            PlaySessionId: 'sess-preview',
+            EnableDirectPlay: true,
+            EnableDirectStream: true,
+          }),
+        });
+        expect(result.url).toBe('https://server.example.com/opened.m3u8');
+        expect(result.liveStreamId).toBe('live-stream-1');
+      });
+
+      it('does not call openLiveStream when RequiresOpening is not set', async () => {
+        mockGetPostedPlaybackInfo.mockResolvedValue({
+          data: { MediaSources: [{ Id: 'src-1', TranscodingUrl: '/live.m3u8' }] },
+        });
+
+        const result = await negotiatePlayback('user-1', 'channel-1', { allowDirectPlayback: true });
+
+        expect(mockOpenLiveStream).not.toHaveBeenCalled();
+        expect(result.liveStreamId).toBeUndefined();
+      });
+
+      it('falls back to the preview MediaSource when openLiveStream returns none', async () => {
+        mockGetPostedPlaybackInfo.mockResolvedValue({
+          data: {
+            PlaySessionId: 'sess-preview',
+            MediaSources: [{ Id: 'src-1', RequiresOpening: true, OpenToken: 'open-token-1', TranscodingUrl: '/preview.m3u8' }],
+          },
+        });
+        mockOpenLiveStream.mockResolvedValue({ data: {} });
+
+        const result = await negotiatePlayback('user-1', 'channel-1', { allowDirectPlayback: true });
+
+        expect(result.url).toBe('https://server.example.com/preview.m3u8');
+        expect(result.liveStreamId).toBeUndefined();
+      });
+    });
   });
 
   it('converts positionMs to StartTimeTicks when given, and omits it otherwise', async () => {
@@ -287,6 +349,15 @@ describe('reportPlaybackStopped', () => {
         PositionTicks: 90_000_000,
       },
     });
+  });
+});
+
+describe('closeLiveStream', () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  it('closes the given live stream id', async () => {
+    await closeLiveStream('live-stream-1');
+    expect(mockCloseLiveStream).toHaveBeenCalledWith({ liveStreamId: 'live-stream-1' });
   });
 });
 

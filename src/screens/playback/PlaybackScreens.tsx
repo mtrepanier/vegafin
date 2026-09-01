@@ -408,7 +408,7 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit, enableNextUp
       });
       sourceRef.current = nextSource;
       setSource(nextSource);
-      setStatusText(t('player.startingVideoAttempt', { attempt: playbackGenerationRef.current }));
+      setStatusText(t('player.startingVideo'));
       await loadVideoSource(activePlayer, nextSource, opts.seekMs / 1000);
       activePlayer.play();
       // Reported eagerly rather than from a 'play'/'playing' event: that event isn't
@@ -472,10 +472,7 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit, enableNextUp
       setDurationSec(0);
       setEnded(false);
       setNextUpDismissed(false);
-      // The generation number is shown so a re-fired onSurfaceViewCreated (KeplerVideoSurfaceView
-      // isn't guaranteed to fire it only once) is visible directly on screen - logs are
-      // unreliable here (systemd-journald rate-limits and silently drops bursts).
-      setStatusText(t('player.preparingPlaybackAttempt', { attempt: generation }));
+      setStatusText(t('player.preparingPlayback'));
       setReady(false);
       setShowControls(true);
       clearControlsHideTimer();
