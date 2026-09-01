@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from '
 import { Image, Pressable, ScrollView, StyleSheet, Text, View, type PressableStateCallbackType } from 'react-native';
 import { createDrawerNavigator, type DrawerContentComponentProps } from '@amazon-devices/react-navigation__drawer';
 import type { NativeStackNavigationProp } from '@amazon-devices/react-navigation__native-stack';
-import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
+import Icon from '../components/Icon';
 import { getUserApi } from '@jellyfin/sdk/lib/utils/api/user-api';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import { CollectionType } from '@jellyfin/sdk/lib/generated-client/models/collection-type';

@@ -1,6 +1,6 @@
 import React, { useRef } from 'react';
 import { Animated, Pressable, StyleSheet, Text, type PressableStateCallbackType } from 'react-native';
-import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
+import Icon from '../Icon';
 import { useTheme } from '../../theme/ThemeContext';
 import { layout, type CardMetrics } from '../../theme/types';
 import { useT } from '../../i18n/useTranslation';

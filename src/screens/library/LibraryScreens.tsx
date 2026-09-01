@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View, type PressableStateCallbackType } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@amazon-devices/react-navigation__native';
-import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
+import Icon from '../../components/Icon';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import { ItemSortBy } from '@jellyfin/sdk/lib/generated-client/models/item-sort-by';
 import { useTheme } from '../../theme/ThemeContext';

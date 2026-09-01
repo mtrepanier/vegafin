@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, type PressableStateCallbackType } from 'react-native';
-import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
+import Icon from './Icon';
 import { useTheme } from '../theme/ThemeContext';
 import { layout } from '../theme/types';
 
@@ -28,10 +28,13 @@ const styles = StyleSheet.create({
   button: {
     width: 44,
     height: 44,
-    textAlign: 'center',
-    textAlignVertical: 'center',
     borderRadius: 22,
     borderWidth: layout.focusBorderWidth,
     overflow: 'hidden',
+    // `Icon` (Icon.tsx) wraps its glyph in a plain `View`, not the text node
+    // `react-native-vector-icons` used to render - centers via flexbox instead of the old
+    // textAlign/textAlignVertical, which only ever affected a Text node.
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

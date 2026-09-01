@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View, type PressableStateCallbackType } from 'react-native';
 import { useNavigation, useRoute, type RouteProp } from '@amazon-devices/react-navigation__native';
 import type { NativeStackNavigationProp } from '@amazon-devices/react-navigation__native-stack';
-import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
+import Icon from '../../components/Icon';
 import { getUserApi } from '@jellyfin/sdk/lib/utils/api/user-api';
 import { getQuickConnectApi } from '@jellyfin/sdk/lib/utils/api/quick-connect-api';
 import type { Api } from '@jellyfin/sdk/lib/api';

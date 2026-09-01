@@ -1,7 +1,7 @@
 import React from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View, type PressableStateCallbackType } from 'react-native';
 import { useTVEventHandler, type HWEvent } from '@amazon-devices/react-native-kepler';
-import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
+import Icon from '../../components/Icon';
 import type { MediaUrl } from '@jellyfin/sdk/lib/generated-client/models/media-url';
 import { useTheme } from '../../theme/ThemeContext';
 import { FocusGroup } from '../../focus/FocusGroup';

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, TextInput, View, type PressableStateCallbackType } from 'react-native';
 import { useNavigation } from '@amazon-devices/react-navigation__native';
 import type { NativeStackNavigationProp } from '@amazon-devices/react-navigation__native-stack';
-import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
+import Icon from '../../components/Icon';
 import { getSystemApi } from '@jellyfin/sdk/lib/utils/api/system-api';
 import { jellyfinClient } from '../../services/jellyfin/JellyfinClient';
 import { getServerUrlCandidates } from '../../services/jellyfin/serverUrl';

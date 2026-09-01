@@ -683,6 +683,45 @@ hand and regenerate the patch (`npx patch-package @jellyfin/sdk`) rather than sk
 since the standalone `new URLSearchParams(str)` constructor needed it on its own — unrelated
 to the bug above, and confirmed fine independently.
 
+### Icons are hand-drawn SVG (`components/Icon.tsx`), not a font-icon package
+
+**Correction, forced by an Amazon Developer Console rejection, not something found on-device.**
+Every icon in the app originally came from `@amazon-devices/react-native-vector-icons`
+(`MaterialIcons`), which autolinked a `vector_icons_2` Kepler native module into
+`manifest.toml`. Submitting a build for review, the Console flagged that exact capability —
+`/com.amazon.kepler.vector_icons_2@IVectorIcons_1` — as not present on several real devices,
+Fire TV Stick HD (2nd generation) and Fire TV Stick (Gen 1) among them, blocking those devices
+from even being selectable as supported targets. Nothing else was flagged — specifically not
+`svg_3` (`@amazon-devices/react-native-svg`), which `ScreenBackdrop.tsx`'s own comment had
+already flagged as the safer choice for exactly this reason ("a system-deployed Kepler
+library... unlike the icon-fonts asset gotcha") before this ever came up.
+
+**Fix**: every icon in the app now goes through `components/Icon.tsx`, a drop-in replacement
+(`name`/`size`/`color`/`style` props, default export — only the import line changed at each of
+15 call sites) that draws each glyph as an inline `react-native-svg` `Path` from a fixed
+`ICON_PATHS` lookup instead of rendering a font glyph. This trades the full MaterialIcons font
+for only the ~35 names this app actually uses — adding a new icon means adding a new `d` path
+here (from Google's Material Symbols/Icons, Apache-2.0), not just typing a new font ligature
+name. `IconButton.tsx`'s circular button background needed `alignItems`/`justifyContent`
+instead of `textAlign`/`textAlignVertical` to keep centering the icon, since those only ever
+affected a `Text` node and `Icon.tsx` wraps its glyph in a plain `View`.
+
+- **Manifest gotcha, found while confirming this fix actually worked**: removing the npm
+  dependency and rebuilding did **not** remove `vector_icons_2` from `manifest.toml`. The
+  autolinker's own log correctly stopped listing it under "dependencies to add" — but it's
+  additive-only and never prunes an entry that's no longer needed, so the stale
+  `[[needs.module]]` block silently survived rebuild after rebuild until removed by hand.
+  Manifest's own header comment now says so explicitly — see it for the exact fix any future
+  dependency removal will need.
+- **Path data accuracy is unverified beyond typechecking** — each `d` string was written from
+  memory of the standard Material Icons (Filled, 24dp) set, not copied from a rendered
+  reference. The common/simple shapes (arrows, play, pause, chevrons, person, home, favorite)
+  are high-confidence; the less common ones this app happens to use for library-type icons
+  (`closed-caption`, `music-video`, `photo-camera-back`, `queue-music`, `menu-book`, `theaters`,
+  `live-tv`) are lower-confidence and were flagged for on-device visual confirmation rather than
+  assumed correct — if one looks visibly wrong, that's the likely culprit, not a rendering bug
+  in `Icon.tsx` itself.
+
 ## Architecture map
 
 | Concern | Kotlin source | This repo |
@@ -1851,7 +1890,8 @@ src/
                                preferences - see Settings above)
   components/                 ItemRow/ItemGrid/PosterRow, cards/, Clock.tsx (hero top-right
                                clock), HeroInfoLine.tsx (shared rating/info line - see Home
-                               screen above), IconButton.tsx
+                               screen above), IconButton.tsx, Icon.tsx (hand-drawn SVG icon set,
+                               every icon in the app - see Icons above)
   screens/
     HomeScreen.tsx, HomeHero.tsx, ScreenBackdrop.tsx (full-bleed backdrop layer, shared with
     MovieDetail/SeriesOverview), homeHeroLayout.ts (shared hero/backdrop sizing),
