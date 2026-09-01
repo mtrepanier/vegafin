@@ -4,6 +4,16 @@ All notable changes to VegaFin are tracked here, generated automatically from
 merged pull requests at release time - see
 [DEVELOPER.md](DEVELOPER.md#versioning--releases) for how.
 
+## [v0.3.0] - 2026-09-01
+
+## What's Changed
+* Update CHANGELOG.md for v0.2.1 by @github-actions[bot] in https://github.com/mtrepanier/vegafin/pull/31
+* Replace react-native-vector-icons with hand-drawn SVG icons by @mtrepanier in https://github.com/mtrepanier/vegafin/pull/32
+* Release v0.3.0 by @github-actions[bot] in https://github.com/mtrepanier/vegafin/pull/33
+
+
+**Full Changelog**: https://github.com/mtrepanier/vegafin/compare/v0.2.1...v0.3.0
+
 ## [v0.2.1] - 2026-09-01
 
 ## What's Changed
