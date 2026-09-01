@@ -1,6 +1,6 @@
 import React from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
-import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
+import Icon from '../Icon';
 import { useTheme } from '../../theme/ThemeContext';
 
 interface Props {

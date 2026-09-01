@@ -3,7 +3,7 @@ import { ActivityIndicator, BackHandler, Pressable, StyleSheet, Text, View, type
 import { useNavigation, useRoute, type RouteProp } from '@amazon-devices/react-navigation__native';
 import { useKeplerAppStateManager, useTVEventHandler, type HWEvent } from '@amazon-devices/react-native-kepler';
 import { KeplerVideoSurfaceView, VideoPlayer } from '@amazon-devices/react-native-w3cmedia';
-import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
+import Icon from '../../components/Icon';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import { useTheme } from '../../theme/ThemeContext';
 import { useCurrentUser } from '../../services/storage/ServerRepositoryContext';

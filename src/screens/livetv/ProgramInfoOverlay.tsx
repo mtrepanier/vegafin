@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View, type PressableStateCallbackType } from 'react-native';
-import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
+import Icon from '../../components/Icon';
 import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import { useTheme } from '../../theme/ThemeContext';
 import { useT } from '../../i18n/useTranslation';

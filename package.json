@@ -27,7 +27,6 @@
     "@amazon-devices/react-native-safe-area-context": "~8.0.0",
     "@amazon-devices/react-native-screens": "~3.0.0",
     "@amazon-devices/react-native-svg": "~3.0.0",
-    "@amazon-devices/react-native-vector-icons": "~2.1.1",
     "@amazon-devices/react-native-w3cmedia": "~2.3.2",
     "@amazon-devices/react-navigation__core": "~8.0.0",
     "@amazon-devices/react-navigation__drawer": "~8.0.0",

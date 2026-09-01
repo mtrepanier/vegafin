@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View, type PressableStateCallbackType } from 'react-native';
-import Icon from '@amazon-devices/react-native-vector-icons/MaterialIcons';
+import Icon from '../../components/Icon';
 import { useTheme } from '../../theme/ThemeContext';
 import type { TFunction } from '../../i18n/useTranslation';
 

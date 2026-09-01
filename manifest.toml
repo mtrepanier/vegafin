@@ -4,8 +4,14 @@
 # The [needs.module] list below is not hand-written: `npm run build:debug` autolinks it
 # from package.json dependencies and rewrites this file in place (confirmed by actually
 # running the build against Vega SDK 0.24.9914 - one real .vpkg produced per architecture).
-# After adding/removing a dependency that ships a Vega native module, rebuild once to let
-# autolinking refresh this section rather than editing it by hand.
+# After ADDING a dependency that ships a Vega native module, rebuild once to let autolinking
+# add the entry for you.
+#
+# Correction: autolinking is additive-only - confirmed on-device when dropping
+# `@amazon-devices/react-native-vector-icons` (see Icon.tsx) left its `vector_icons_2` entry
+# behind after a rebuild, even though the tool's own "dependencies to add" log correctly
+# stopped listing it. After REMOVING a dependency, a rebuild alone won't clean up its now-stale
+# entry - delete that `[[needs.module]]` block by hand.
 #
 schema-version = 1
 
@@ -117,9 +123,6 @@ id = "/com.amazon.kepler.screens_3@IScreens_0"
 
 [[needs.module]]
 id = "/com.amazon.kepler.svg_3@ISVG_0"
-
-[[needs.module]]
-id = "/com.amazon.kepler.vector_icons_2@IVectorIcons_1"
 
 [[needs.module]]
 id = "/com.amazon.kepler.w3cmedia_2@IW3cmedia_3"
