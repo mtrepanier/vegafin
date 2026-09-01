@@ -95,8 +95,7 @@ export const en = {
 
   // Playback
   'player.preparingPlayback': 'Preparing playback...',
-  'player.preparingPlaybackAttempt': 'Preparing playback... (attempt {attempt})',
-  'player.startingVideoAttempt': 'Starting video... (attempt {attempt})',
+  'player.startingVideo': 'Starting video...',
   'player.buffering': 'Buffering...',
   'player.stalledBuffering': 'Playback stalled. Buffering...',
   'player.playbackFailed': 'Playback failed.',

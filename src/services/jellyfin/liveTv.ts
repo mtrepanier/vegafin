@@ -105,12 +105,19 @@ export interface GuideCell {
  * clipped to the window's own bounds, not the program's real bounds - the displayed cell only
  * ever represents the portion of the program actually inside the fetched window, so it can't
  * end up positioned partly off the timeline's left edge. `minWidth` keeps a very short program
- * (a 5-minute news break) wide enough to still show a title and stay a reasonable tap target. */
+ * (a 5-minute news break) wide enough to still show a title and stay a reasonable tap target -
+ * but never past where the *next* program in `programs` actually starts. Cells are positioned
+ * independently (`left`/`width` from each program's own real start/end, not flowed one after
+ * another), so without this cap a short program's widened cell would silently overlap the next
+ * one's - confirmed on-device as a real bug: the next cell, painted after it in `programs`
+ * order, simply rendered on top and covered the overlap, leaving the short cell's own rounded
+ * corner hidden behind a flat, unrounded-looking seam. */
 export function layoutGuideCells(programs: BaseItemDto[], windowStart: Date, windowEnd: Date, pxPerMinute: number, minWidth: number): GuideCell[] {
   const start = windowStart.getTime();
   const end = windowEnd.getTime();
   const cells: GuideCell[] = [];
-  for (const program of programs) {
+  for (let i = 0; i < programs.length; i++) {
+    const program = programs[i];
     if (!program.StartDate || !program.EndDate) {
       continue;
     }
@@ -120,10 +127,24 @@ export function layoutGuideCells(programs: BaseItemDto[], windowStart: Date, win
       continue;
     }
     const left = ((programStart - start) / 60000) * pxPerMinute;
-    const width = Math.max(((programEnd - programStart) / 60000) * pxPerMinute, minWidth);
+    const naturalWidth = ((programEnd - programStart) / 60000) * pxPerMinute;
+
+    const nextStartDate = programs[i + 1]?.StartDate;
+    const availableWidth = nextStartDate ? ((Math.max(new Date(nextStartDate).getTime(), start) - programStart) / 60000) * pxPerMinute : Infinity;
+
+    const width = Math.max(naturalWidth, Math.min(minWidth, availableWidth));
     cells.push({ program, left, width });
   }
   return cells;
+}
+
+/** Rounds a guide window's start time down to the nearest `intervalMinutes` boundary - without
+ * this, opening the guide at (say) 14:47 produced a header reading 14:47, 15:17, 15:47... instead
+ * of the usual TV-guide :00/:30 marks every other client lines its own grid up on. */
+export function floorToGuideInterval(date: Date, intervalMinutes: number): Date {
+  const floored = new Date(date);
+  floored.setMinutes(Math.floor(floored.getMinutes() / intervalMinutes) * intervalMinutes, 0, 0);
+  return floored;
 }
 
 /** Time-of-day labels for the guide's shared header, one every `intervalMinutes` across

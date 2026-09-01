@@ -93,8 +93,7 @@ export const fr: Record<TranslationKey, string> = {
 
   // Playback
   'player.preparingPlayback': 'Préparation de la lecture...',
-  'player.preparingPlaybackAttempt': 'Préparation de la lecture... (tentative {attempt})',
-  'player.startingVideoAttempt': 'Démarrage de la vidéo... (tentative {attempt})',
+  'player.startingVideo': 'Démarrage de la vidéo...',
   'player.buffering': 'Mise en mémoire tampon...',
   'player.stalledBuffering': 'Lecture interrompue. Mise en mémoire tampon...',
   'player.playbackFailed': 'Échec de la lecture.',

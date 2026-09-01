@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   Image,
   Pressable,
   ScrollView,
@@ -13,6 +14,7 @@ import {
   type PressableStateCallbackType,
 } from 'react-native';
 import { useNavigation } from '@amazon-devices/react-navigation__native';
+import type { BaseItemDto } from '@jellyfin/sdk/lib/generated-client/models/base-item-dto';
 import { useTheme } from '../../theme/ThemeContext';
 import { layout } from '../../theme/types';
 import { useCurrentUser } from '../../services/storage/ServerRepositoryContext';
@@ -24,6 +26,7 @@ import {
   layoutGuideCells,
   guideTimeLabels,
   isProgramAiring,
+  floorToGuideInterval,
   type ChannelGuide,
 } from '../../services/jellyfin/liveTv';
 import { primaryImageUrl } from '../../services/jellyfin/images';
@@ -32,6 +35,7 @@ import { formatClockTime } from '../../util/format';
 import { useT } from '../../i18n/useTranslation';
 import { useLanguage } from '../../i18n/useLanguage';
 import type { AppNavigationProp } from '../../navigation/types';
+import { ProgramInfoOverlay } from './ProgramInfoOverlay';
 
 /** How far ahead the guide fetches program data for - a fixed window rather than paged/
  * scrollable time navigation (see this screen's own README section for the fuller reasoning). */
@@ -39,9 +43,12 @@ const GUIDE_WINDOW_HOURS = 4;
 const CHANNEL_COL_WIDTH = 160;
 const ROW_HEIGHT = 72;
 const TIME_HEADER_HEIGHT = 32;
-const HOUR_WIDTH = 240;
+// Doubled from the first version (240/70) - confirmed on-device as too cramped compared to every
+// reference guide client, which all give a 30-minute slot considerably more room to show a title
+// without truncating immediately.
+const HOUR_WIDTH = 480;
 const MINUTE_WIDTH = HOUR_WIDTH / 60;
-const MIN_CELL_WIDTH = 70;
+const MIN_CELL_WIDTH = 140;
 const TIME_LABEL_INTERVAL_MIN = 30;
 const TIMELINE_WIDTH = GUIDE_WINDOW_HOURS * HOUR_WIDTH;
 
@@ -106,19 +113,27 @@ function ProgramCell({
 }) {
   const { colors } = useTheme();
   const t = useT();
+  // Below this, the "ON NOW" tag and the title fighting for the same ~2 lines of space is what
+  // was producing what looked like an unrounded, overflowing cell - dropping the tag on a
+  // narrow cell leaves the title (still 1 line, still ellipsized) the room it needs to actually
+  // fit inside the cell's own rounded bounds instead of visually bleeding into the next one.
+  const showLiveTag = live && width >= 110;
   return (
     <Pressable hasTVPreferredFocus={hasTVPreferredFocus} onFocus={onFocus} onPress={onPress} style={[styles.cellWrap, { width }]}>
       {({ focused }: PressableStateCallbackType) => {
-        const cellStyle = [
-          styles.cell,
-          { backgroundColor: focused ? colors.primaryContainer : colors.surfaceVariant, borderColor: focused ? colors.border : 'transparent' },
-        ];
-        const liveTagStyle = [styles.liveTag, { color: focused ? colors.onPrimaryContainer : colors.primary }];
-        const nameStyle = [styles.programName, { color: focused ? colors.onPrimaryContainer : colors.onSurface }];
+        // A currently-airing program gets its own solid, high-contrast background when
+        // unfocused - `colors.primary` filled, not just a subtle tint, so "on now" reads clearly
+        // at a glance across the whole grid. Focus still wins visually either way
+        // (`primaryContainer`), so a live cell can't be mistaken for a merely-focused one.
+        const background = focused ? colors.primaryContainer : live ? colors.primary : colors.surfaceVariant;
+        const foreground = focused ? colors.onPrimaryContainer : live ? colors.onPrimary : colors.onSurface;
+        const cellStyle = [styles.cell, { backgroundColor: background, borderColor: focused ? colors.border : 'transparent' }];
+        const liveTagStyle = [styles.liveTag, { color: foreground }];
+        const nameStyle = [styles.programName, { color: foreground }];
         return (
           <View style={cellStyle}>
-            {live ? <Text style={liveTagStyle}>{t('livetv.onNow')}</Text> : null}
-            <Text numberOfLines={2} style={nameStyle}>
+            {showLiveTag ? <Text style={liveTagStyle}>{t('livetv.onNow')}</Text> : null}
+            <Text numberOfLines={1} style={nameStyle}>
               {name}
             </Text>
           </View>
@@ -161,6 +176,23 @@ export function LiveTvGuideScreen() {
   const [guide, setGuide] = useState<ChannelGuide[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [guideWindow, setGuideWindow] = useState<{ start: Date; end: Date } | null>(null);
+  const [selected, setSelected] = useState<{ program: BaseItemDto; channel: BaseItemDto } | null>(null);
+
+  // Hardware back closes the info overlay first, rather than immediately exiting the guide -
+  // the overlay is plain component state here, not a navigation entry, so without this the
+  // automatic `NavigationContainer` back listener would just leave the guide entirely on the
+  // first press while the overlay was still open. Returning `false` when nothing's selected lets
+  // that same automatic handler behave exactly as it already does everywhere else in the app.
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (selected) {
+        setSelected(null);
+        return true;
+      }
+      return false;
+    });
+    return () => subscription.remove();
+  }, [selected]);
 
   useEffect(() => {
     if (!userId) {
@@ -170,7 +202,7 @@ export function LiveTvGuideScreen() {
     setLoading(true);
     fetchLiveTvChannels(userId).then(async (channels) => {
       if (cancelled) return;
-      const start = new Date();
+      const start = floorToGuideInterval(new Date(), TIME_LABEL_INTERVAL_MIN);
       const end = new Date(start.getTime() + GUIDE_WINDOW_HOURS * 60 * 60 * 1000);
       const result = await fetchLiveTvGuide(userId, channels, start, end);
       if (!cancelled) {
@@ -323,11 +355,15 @@ export function LiveTvGuideScreen() {
                                   width={cell.width}
                                   hasTVPreferredFocus={rowIndex === 0 && cellIndex === 0}
                                   onFocus={() => revealCell(rowIndex, cell.left, cell.width)}
-                                  onPress={() => tuneIn(row.channel.Id)}
+                                  onPress={() => setSelected({ program: cell.program, channel: row.channel })}
                                 />
                               </View>
                             ))
                           ) : (
+                            // Tunes in directly rather than opening the overlay - there's no
+                            // program data to show, and the channel is inherently "live now"
+                            // with no scheduled boundary, so an info screen here would just be
+                            // an empty extra step before the same Play action.
                             <View style={styles.noDataCellPositioner}>
                               <ProgramCell
                                 name={t('livetv.noGuideData')}
@@ -348,6 +384,19 @@ export function LiveTvGuideScreen() {
             ) : null}
           </View>
         </>
+      ) : null}
+
+      {selected ? (
+        <ProgramInfoOverlay
+          program={selected.program}
+          channel={selected.channel}
+          live={isProgramAiring(selected.program, now)}
+          onPlay={() => {
+            setSelected(null);
+            tuneIn(selected.channel.Id);
+          }}
+          onClose={() => setSelected(null)}
+        />
       ) : null}
     </View>
   );
@@ -454,6 +503,10 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     padding: 8,
     gap: 2,
+    // Without this, a title that didn't fit could render past this cell's own rounded bounds
+    // and visually bleed into the next cell instead of being clipped by them - confirmed
+    // on-device as what made adjacent cells look unrounded/merged together.
+    overflow: 'hidden',
   },
   liveTag: {
     fontSize: 10,

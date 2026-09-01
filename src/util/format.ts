@@ -81,6 +81,12 @@ export function formatFullDate(iso: string, language: Language): string {
   return new Date(iso).toLocaleDateString(localeTag(language), { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+/** "Mon, Aug 31" - no year, for the Live TV guide's program info overlay (matches the compact
+ * date every reference TV-guide client shows next to a program's air time). */
+export function formatWeekdayDate(date: Date, language: Language): string {
+  return date.toLocaleDateString(localeTag(language), { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
 /**
  * Time left in an in-progress item, or undefined for one with no saved position. Prefers
  * `UserData.PlayedPercentage` (`RunTimeTicks * (1 - PlayedPercentage/100)`) over
