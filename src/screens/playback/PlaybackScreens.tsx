@@ -130,6 +130,10 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit, enableNextUp
   const [error, setError] = useState(false);
   const [errorDetail, setErrorDetail] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  // Whether opening the picker paused playback itself (as opposed to the video already being
+  // paused for some other reason) - only then does closing it resume playback, so it never
+  // fights a deliberate pause the user made before opening the picker.
+  const pausedByPickerRef = useRef(false);
   const [selection, setSelection] = useState<{ audioStreamIndex?: number; subtitleStreamIndex?: number }>({});
   const [paused, setPaused] = useState(true);
   const [positionSec, setPositionSec] = useState(initialPositionMs / 1000);
@@ -397,7 +401,10 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit, enableNextUp
   );
 
   const load = useCallback(
-    async (activePlayer: VideoPlayer, opts: { audioStreamIndex?: number; subtitleStreamIndex?: number; seekMs: number }) => {
+    async (
+      activePlayer: VideoPlayer,
+      opts: { audioStreamIndex?: number; subtitleStreamIndex?: number; mediaSourceId?: string; seekMs: number },
+    ) => {
       if (!userId) {
         return;
       }
@@ -405,6 +412,7 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit, enableNextUp
         positionMs: opts.seekMs,
         audioStreamIndex: opts.audioStreamIndex,
         subtitleStreamIndex: opts.subtitleStreamIndex,
+        mediaSourceId: opts.mediaSourceId,
       });
       sourceRef.current = nextSource;
       setSource(nextSource);
@@ -805,6 +813,42 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit, enableNextUp
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSegment?.Id]);
 
+  const audioTracks = useMemo(
+    () => source?.mediaStreams.filter((s) => s.Type === MediaStreamType.Audio) ?? [],
+    [source],
+  );
+  const subtitleTracks = useMemo(
+    () => source?.mediaStreams.filter((s) => s.Type === MediaStreamType.Subtitle) ?? [],
+    [source],
+  );
+  const hasSelectableTracks = audioTracks.length > 1 || subtitleTracks.length > 0;
+
+  // Pauses (if not already paused) and opens the picker together - being mid-playback while
+  // arrowing through track choices was disorienting, and the picker's own rows need native TV
+  // focus to actually receive D-pad/Select instead of leaking through to the seek/play-pause
+  // handling below. Stable identity (empty deps, only reads/writes refs and the setState
+  // function) so it's safe to depend on from handleTVEvent without re-memoizing it every render.
+  const openPicker = useCallback(() => {
+    const activePlayer = playerRef.current;
+    if (activePlayer && !activePlayer.paused) {
+      pausedByPickerRef.current = true;
+      activePlayer.pause();
+    } else {
+      pausedByPickerRef.current = false;
+    }
+    setPickerOpen(true);
+  }, []);
+
+  // Resumes playback only if opening the picker was what paused it - never fights a pause the
+  // user made deliberately before opening the picker.
+  const closePicker = useCallback(() => {
+    if (pausedByPickerRef.current) {
+      pausedByPickerRef.current = false;
+      playerRef.current?.play();
+    }
+    setPickerOpen(false);
+  }, []);
+
   // KeplerVideoSurfaceView renders no controls of its own, so all remote input - play/pause,
   // skip forward/back, and the D-pad - is driven from raw TV key events here. Reads playerRef
   // rather than closing over `ready` state so this handler stays stable across renders instead
@@ -817,6 +861,15 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit, enableNextUp
         return;
       }
       const type = (event.eventType ?? '').replace(/_up$/, '');
+
+      // While the picker is open, its own rows own Select/D-pad navigation via native TV focus
+      // - every other key this handler would otherwise act on (seek, seek-hold, play/pause) has
+      // to stay out of its way, or arrowing through the picker's rows also seeks the video
+      // underneath it. Confirmed as a real bug, not a hypothetical: exactly this happened before
+      // this guard existed.
+      if (pickerOpen && type !== 'back' && type !== 'menu' && type !== 'context_menu') {
+        return;
+      }
 
       // Bypasses the generic click dedupe below entirely - see handleSeekHoldEvent/
       // SEEK_HOLD_MIN_EVENTS_TO_RAMP's own comments for why these two need every raw event,
@@ -848,15 +901,32 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit, enableNextUp
         case 'back':
           // Dismiss whichever overlay is up instead of exiting playback, matching the "back
           // cancels the overlay" convention other TV players use - the video itself is still
-          // playing (or already ended) behind it either way. Next Up takes priority since seeing
-          // it means the current item is basically over regardless of what's happening with a
-          // segment.
-          if (nextUpVisible) {
+          // playing (or already ended) behind it either way. The track picker takes priority
+          // over everything else here since it's the top-most layer when open; Next Up is next
+          // since seeing it means the current item is basically over regardless of what's
+          // happening with a segment.
+          if (pickerOpen) {
+            closePicker();
+          } else if (nextUpVisible) {
             setNextUpDismissed(true);
           } else if (skipButtonVisible && activeSegment?.Id) {
             setDismissedSegmentId(activeSegment.Id);
           } else {
             onExit();
+          }
+          break;
+        case 'menu':
+        case 'context_menu':
+          // The remote's MENU control (the "≡" button on most Fire TV remotes) is now the only
+          // way to open the audio/subtitle picker - see the removed top-bar icon's own comment
+          // below for why. Guarded the same way that icon was: nothing to pick when there's at
+          // most one audio track and no subtitles at all.
+          if (hasSelectableTracks) {
+            if (pickerOpen) {
+              closePicker();
+            } else {
+              openPicker();
+            }
           }
           break;
         case 'play':
@@ -888,6 +958,9 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit, enableNextUp
       seekBy,
       revealControls,
       pickerOpen,
+      hasSelectableTracks,
+      openPicker,
+      closePicker,
       skipForwardSec,
       skipBackwardSec,
       nextUpVisible,
@@ -898,15 +971,6 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit, enableNextUp
   );
   useTVEventHandler(handleTVEvent);
 
-  const audioTracks = useMemo(
-    () => source?.mediaStreams.filter((s) => s.Type === MediaStreamType.Audio) ?? [],
-    [source],
-  );
-  const subtitleTracks = useMemo(
-    () => source?.mediaStreams.filter((s) => s.Type === MediaStreamType.Subtitle) ?? [],
-    [source],
-  );
-
   const selectTrack = async (next: { audioStreamIndex?: number; subtitleStreamIndex?: number }) => {
     const activePlayer = playerRef.current;
     if (!activePlayer) {
@@ -914,8 +978,39 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit, enableNextUp
     }
     const merged = { ...selection, ...next };
     setSelection(merged);
+    // Not closePicker(): load() below always resumes playback on its own (a track switch is a
+    // full reload), so there's nothing for closePicker()'s own resume-if-we-paused-it logic to
+    // usefully do here - just clear the flag so a *later* open/close cycle doesn't act on a
+    // stale pause it didn't cause.
+    pausedByPickerRef.current = false;
     setPickerOpen(false);
-    await load(activePlayer, { ...merged, seekMs: positionMsRef.current });
+
+    // Report the replaced session stopped, and wait for it, before negotiating the new one -
+    // confirmed on-device as a real bug otherwise: a request for a different AudioStreamIndex
+    // came back from the server with the *previous* session's index still baked into the
+    // returned TranscodingUrl. Turned out to be nothing to do with session lifecycle at all
+    // (an earlier version of this fix reported the replaced session stopped first, on the
+    // theory the server was reusing an active transcode job - confirmed wrong by testing
+    // directly against the server with plain curl, bypassing this app entirely: the actual
+    // cause was `negotiatePlayback` never passing `audioStreamIndex`/`subtitleStreamIndex`/
+    // `mediaSourceId` as the top-level request params the server actually reads for this,
+    // see that function's own comment). `mediaSourceId` comes from the *current* source since
+    // it's a property of the file, not of which streams are selected, so it stays valid across
+    // the switch.
+    //
+    // Still treated as a fresh session, not a continuation, though: clears the old
+    // progress-reporting interval (load() below would otherwise overwrite progressTimerRef
+    // without clearing it first, leaking the old interval) and lets load()'s own existing
+    // startedRef branch report a proper playbackStart for the new session's own PlaySessionId -
+    // skipping that risked later playbackProgress/playbackStopped calls against a PlaySessionId
+    // the server was never told had started.
+    if (progressTimerRef.current) {
+      clearInterval(progressTimerRef.current);
+      progressTimerRef.current = null;
+    }
+    startedRef.current = false;
+
+    await load(activePlayer, { ...merged, mediaSourceId: sourceRef.current?.mediaSourceId, seekMs: positionMsRef.current });
   };
 
   const togglePlayPause = () => {
@@ -981,15 +1076,6 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit, enableNextUp
               {title}
             </Text>
           ) : null}
-          {audioTracks.length > 1 || subtitleTracks.length > 0 ? (
-            <Pressable onPress={() => setPickerOpen((v) => !v)}>
-              {({ focused }: PressableStateCallbackType) => (
-                <View style={iconChipStyle(focused)}>
-                  <Icon name="closed-caption" size={22} color={colors.onBackground} />
-                </View>
-              )}
-            </Pressable>
-          ) : null}
         </View>
       ) : null}
 
@@ -1017,7 +1103,7 @@ function PlaybackBody({ itemId, initialPositionMs, onEnded, onExit, enableNextUp
           selection={selection}
           onSelectAudio={(index) => selectTrack({ audioStreamIndex: index })}
           onSelectSubtitle={(index) => selectTrack({ subtitleStreamIndex: index })}
-          onClose={() => setPickerOpen(false)}
+          onClose={closePicker}
         />
       ) : null}
 
@@ -1050,46 +1136,72 @@ interface TrackPickerProps {
 function TrackPicker({ audioTracks, subtitleTracks, selection, onSelectAudio, onSelectSubtitle, onClose }: TrackPickerProps) {
   const { colors } = useTheme();
   const t = useT();
+  // The very first row rendered gets native TV focus as soon as the picker opens - without it,
+  // D-pad/Select on a freshly-opened picker had nothing focused to land on, so the underlying
+  // handleTVEvent kept receiving (and acting on) those key events instead. Audio comes first
+  // when there's any to show; otherwise focus falls to the subtitle section's own "Off" row,
+  // which is always the first thing rendered there.
+  const audioGetsFirstFocus = audioTracks.length > 0;
   return (
-    <View style={[styles.picker, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-      {audioTracks.length > 0 ? (
-        <>
-          <Text style={[styles.pickerHeading, { color: colors.onSurfaceVariant }]}>{t('player.audio')}</Text>
-          {audioTracks.map((track) => (
-            <PickerRow
-              key={track.Index}
-              label={track.DisplayTitle ?? track.Language ?? t('player.trackFallback', { number: track.Index ?? 0 })}
-              selected={selection.audioStreamIndex === track.Index}
-              onPress={() => track.Index != null && onSelectAudio(track.Index)}
-            />
-          ))}
-        </>
-      ) : null}
-      {subtitleTracks.length > 0 ? (
-        <>
-          <Text style={[styles.pickerHeading, { color: colors.onSurfaceVariant }]}>{t('player.subtitles')}</Text>
-          <PickerRow label={t('common.off')} selected={selection.subtitleStreamIndex == null} onPress={() => onSelectSubtitle(undefined)} />
-          {subtitleTracks.map((track) => (
-            <PickerRow
-              key={track.Index}
-              label={track.DisplayTitle ?? track.Language ?? t('player.trackFallback', { number: track.Index ?? 0 })}
-              selected={selection.subtitleStreamIndex === track.Index}
-              onPress={() => track.Index != null && onSelectSubtitle(track.Index)}
-            />
-          ))}
-        </>
-      ) : null}
-      <Pressable onPress={onClose} style={styles.pickerClose}>
-        <Text style={{ color: colors.primary }}>{t('common.close')}</Text>
-      </Pressable>
+    <View style={styles.pickerBackdrop}>
+      <View style={[styles.picker, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View style={styles.pickerColumns}>
+          {audioTracks.length > 0 ? (
+            <View style={styles.pickerColumn}>
+              <Text style={[styles.pickerHeading, { color: colors.onSurfaceVariant }]}>{t('player.audio')}</Text>
+              {audioTracks.map((track, index) => (
+                <PickerRow
+                  key={track.Index}
+                  label={track.DisplayTitle ?? track.Language ?? t('player.trackFallback', { number: track.Index ?? 0 })}
+                  selected={selection.audioStreamIndex === track.Index}
+                  onPress={() => track.Index != null && onSelectAudio(track.Index)}
+                  hasTVPreferredFocus={index === 0}
+                />
+              ))}
+            </View>
+          ) : null}
+          {subtitleTracks.length > 0 ? (
+            <View style={styles.pickerColumn}>
+              <Text style={[styles.pickerHeading, { color: colors.onSurfaceVariant }]}>{t('player.subtitles')}</Text>
+              <PickerRow
+                label={t('common.off')}
+                selected={selection.subtitleStreamIndex == null}
+                onPress={() => onSelectSubtitle(undefined)}
+                hasTVPreferredFocus={!audioGetsFirstFocus}
+              />
+              {subtitleTracks.map((track) => (
+                <PickerRow
+                  key={track.Index}
+                  label={track.DisplayTitle ?? track.Language ?? t('player.trackFallback', { number: track.Index ?? 0 })}
+                  selected={selection.subtitleStreamIndex === track.Index}
+                  onPress={() => track.Index != null && onSelectSubtitle(track.Index)}
+                />
+              ))}
+            </View>
+          ) : null}
+        </View>
+        <Pressable onPress={onClose} style={styles.pickerClose}>
+          <Text style={{ color: colors.primary }}>{t('common.close')}</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
 
-function PickerRow({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+function PickerRow({
+  label,
+  selected,
+  onPress,
+  hasTVPreferredFocus,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+  hasTVPreferredFocus?: boolean;
+}) {
   const { colors } = useTheme();
   return (
-    <Pressable onPress={onPress}>
+    <Pressable hasTVPreferredFocus={hasTVPreferredFocus} onPress={onPress}>
       {({ focused }: PressableStateCallbackType) => {
         const rowStyle = [
           styles.pickerRow,
@@ -1249,14 +1361,27 @@ const styles = StyleSheet.create({
   progressFill: {
     height: '100%',
   },
+  // Dims and covers the whole screen while the picker is open - matches the modal treatment
+  // Live TV's own ProgramInfoOverlay uses, and makes clear at a glance that the video
+  // underneath (now paused - see openPicker) isn't the focused thing anymore.
+  pickerBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'flex-start',
+  },
   picker: {
-    position: 'absolute',
-    top: 80,
-    right: 24,
-    minWidth: 240,
+    marginTop: 80,
+    marginHorizontal: 24,
     borderRadius: 8,
     borderWidth: 1,
-    padding: 12,
+    padding: 16,
+  },
+  pickerColumns: {
+    flexDirection: 'row',
+    gap: 48,
+  },
+  pickerColumn: {
+    flex: 1,
     gap: 4,
   },
   pickerHeading: {

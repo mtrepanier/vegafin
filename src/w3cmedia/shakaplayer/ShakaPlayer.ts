@@ -17,6 +17,7 @@
 import {HTMLMediaElement} from '@amazon-devices/react-native-w3cmedia/dist/headless';
 import {Platform} from 'react-native';
 import {PlayerInterface} from '../PlayerInterface';
+import {BufferOperationTracker} from '../bufferOperationTracker';
 import shaka from './dist/shaka-player.compiled';
 
 // import polyfills
@@ -49,6 +50,12 @@ export class ShakaPlayer implements PlayerInterface {
   player: shaka.Player;
   private setting_: ShakaPlayerSettings;
   private mediaElement: HTMLMediaElement | null;
+  private bufferOperations = new BufferOperationTracker();
+  private appendHooksCleanup: (() => void) | null = null;
+  // Serializes load()/unload() against each other - see `bufferOperationTracker.ts`'s own
+  // comment for why this exists at all: ported from AmbientFlare/astra-tv's v1.1.1 fix for
+  // playback stopping outright on real Fire TV hardware (not reproduced on the Virtual Device).
+  private lifecycleQueue: Promise<void> = Promise.resolve();
 
   static readonly enableNativeParsing = false;
   static readonly enableNativeXmlParsing = false;
@@ -59,6 +66,87 @@ export class ShakaPlayer implements PlayerInterface {
   ) {
     this.mediaElement = mediaElement;
     this.setting_ = setting;
+  }
+
+  private enqueueLifecycle<T>(operation: () => Promise<T>): Promise<T> {
+    const next = this.lifecycleQueue.then(operation, operation);
+    this.lifecycleQueue = next.then(
+      () => undefined,
+      () => undefined,
+    );
+    return next;
+  }
+
+  /** Wait for SourceBuffer work already handed to the native pipeline. */
+  async waitForAppendComplete(): Promise<void> {
+    await this.bufferOperations.waitForComplete();
+  }
+
+  private wrapSourceBuffer(sourceBuffer: any): void {
+    if (!sourceBuffer || sourceBuffer.__vegafinAppendGate) {
+      return;
+    }
+
+    sourceBuffer.__vegafinAppendGate = true;
+    const originalAppendBuffer = sourceBuffer.appendBuffer?.bind(sourceBuffer);
+    const originalRemove = sourceBuffer.remove?.bind(sourceBuffer);
+    const originalAbort = sourceBuffer.abort?.bind(sourceBuffer);
+
+    if (originalAppendBuffer) {
+      sourceBuffer.appendBuffer = (data: ArrayBuffer | ArrayBufferView) => {
+        this.bufferOperations.track(sourceBuffer, () => originalAppendBuffer(data), true);
+      };
+    }
+
+    if (originalRemove) {
+      sourceBuffer.remove = (start: number, end: number) => {
+        this.bufferOperations.track(sourceBuffer, () => originalRemove(start, end), false);
+      };
+    }
+
+    if (originalAbort) {
+      sourceBuffer.abort = () => {
+        this.bufferOperations.track(sourceBuffer, () => originalAbort(), false);
+      };
+    }
+  }
+
+  private installAppendHooks(): void {
+    const constructors = [
+      global.MediaSource,
+      global.window?.MediaSource,
+      global.ManagedMediaSource,
+      global.window?.ManagedMediaSource,
+    ].filter(Boolean);
+    const restorers: Array<() => void> = [];
+
+    Array.from(new Set(constructors)).forEach((MediaSourceConstructor: any) => {
+      const prototype = MediaSourceConstructor.prototype;
+      const addSourceBuffer = prototype?.__vegafinOriginalAddSourceBuffer ?? prototype?.addSourceBuffer;
+      if (typeof addSourceBuffer !== 'function') {
+        return;
+      }
+
+      prototype.__vegafinOriginalAddSourceBuffer = addSourceBuffer;
+      const player = this;
+      const wrappedAddSourceBuffer = function (...args: any[]) {
+        const sourceBuffer = addSourceBuffer.apply(this, args);
+        player.wrapSourceBuffer(sourceBuffer);
+        return sourceBuffer;
+      };
+      prototype.addSourceBuffer = wrappedAddSourceBuffer;
+      restorers.push(() => {
+        if (prototype.addSourceBuffer === wrappedAddSourceBuffer) {
+          prototype.addSourceBuffer = addSourceBuffer;
+          delete prototype.__vegafinOriginalAddSourceBuffer;
+        }
+      });
+    });
+
+    this.appendHooksCleanup = () => {
+      restorers.forEach((restore) => restore());
+      this.appendHooksCleanup = null;
+    };
   }
 
   // Custom callbacks {{{
@@ -199,6 +287,13 @@ export class ShakaPlayer implements PlayerInterface {
   // End custom callbacks }}}
 
   async load(content: any, _autoplay: boolean): Promise<void> {
+    return this.enqueueLifecycle(() => this.loadInternal(content, _autoplay));
+  }
+
+  private async loadInternal(content: any, _autoplay: boolean): Promise<void> {
+    await this.waitForAppendComplete();
+    this.installAppendHooks();
+
     // Native HLS parsing setup
     if (ShakaPlayer.enableNativeParsing) {
       if (
@@ -465,6 +560,7 @@ export class ShakaPlayer implements PlayerInterface {
     }
 
     await this.internalLoad(content);
+    await this.waitForAppendComplete();
     console.log('shakaplayer: load() OUT');
   }
   private async internalLoad(content: any) {
@@ -512,13 +608,20 @@ export class ShakaPlayer implements PlayerInterface {
   }
 
   async unload(): Promise<void> {
+    return this.enqueueLifecycle(() => this.unloadInternal());
+  }
+
+  private async unloadInternal(): Promise<void> {
     console.log('shakaplayer:unload');
 
     const player = this.player;
     this.player = null;
     this.mediaElement = null;
 
+    await this.waitForAppendComplete();
+
     if (!player) {
+      this.appendHooksCleanup?.();
       return;
     }
 
@@ -543,9 +646,13 @@ export class ShakaPlayer implements PlayerInterface {
     try {
       await player.detach();
     } finally {
-      // Shaka cleanup is asynchronous. Awaiting destroy is essential before
-      // another player attaches to the same Vega media element.
-      await player.destroy();
+      try {
+        // Shaka cleanup is asynchronous. Awaiting destroy is essential before
+        // another player attaches to the same Vega media element.
+        await player.destroy();
+      } finally {
+        this.appendHooksCleanup?.();
+      }
     }
   }
 }

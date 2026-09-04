@@ -141,20 +141,40 @@ export function LibraryGrid({ title, fetchPage, sort, onSortChange, gridAspect =
       <View style={styles.toolbar}>
         <View style={styles.toolbarButtons}>
           {sort && currentSortOption ? (
-            <Pressable onPress={() => setSortPickerOpen((v) => !v)} style={[styles.toolbarButton, { borderColor: colors.border }]}>
-              <Text style={{ color: colors.onSurfaceVariant }}>{t('library.sortPrefix', { label: t(currentSortOption.labelKey) })}</Text>
-              <Icon
-                name={sort.direction === 'Ascending' ? 'arrow-upward' : 'arrow-downward'}
-                size={14}
-                color={colors.onSurfaceVariant}
-              />
+            <Pressable onPress={() => setSortPickerOpen((v) => !v)}>
+              {({ focused }: PressableStateCallbackType) => {
+                const contentColor = focused ? colors.onPrimaryContainer : colors.onSurfaceVariant;
+                return (
+                  <View
+                    style={[
+                      styles.toolbarButton,
+                      { borderColor: colors.border, backgroundColor: focused ? colors.primaryContainer : 'transparent' },
+                    ]}
+                  >
+                    <Text style={{ color: contentColor }}>{t('library.sortPrefix', { label: t(currentSortOption.labelKey) })}</Text>
+                    <Icon
+                      name={sort.direction === 'Ascending' ? 'arrow-upward' : 'arrow-downward'}
+                      size={14}
+                      color={contentColor}
+                    />
+                  </View>
+                );
+              }}
             </Pressable>
           ) : null}
-          <Pressable
-            onPress={() => setViewMode((m) => (m === 'grid' ? 'list' : 'grid'))}
-            style={[styles.toolbarButton, { borderColor: colors.border }]}
-          >
-            <Text style={{ color: colors.onSurfaceVariant }}>{viewMode === 'grid' ? t('library.grid') : t('library.list')}</Text>
+          <Pressable onPress={() => setViewMode((m) => (m === 'grid' ? 'list' : 'grid'))}>
+            {({ focused }: PressableStateCallbackType) => (
+              <View
+                style={[
+                  styles.toolbarButton,
+                  { borderColor: colors.border, backgroundColor: focused ? colors.primaryContainer : 'transparent' },
+                ]}
+              >
+                <Text style={{ color: focused ? colors.onPrimaryContainer : colors.onSurfaceVariant }}>
+                  {viewMode === 'grid' ? t('library.grid') : t('library.list')}
+                </Text>
+              </View>
+            )}
           </Pressable>
         </View>
       </View>

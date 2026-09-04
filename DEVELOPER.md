@@ -269,6 +269,91 @@ ramps into a faster, repeating seek the longer it's held.
   `HWEvent` logging during a manual hold test (the same technique that originally nailed down
   the play/pause `eventType` mismatch below), not more guessing from code alone.
 
+### Audio/subtitle picker opens via the remote's MENU button, not an on-screen icon
+
+**Correction, requested after real-hardware use**: the audio/subtitle `TrackPicker` was
+originally opened by tapping a `closed-caption` icon pinned to the playback top bar - a
+touch-first affordance that didn't match how a TV remote actually drives this app, and testing
+on a real Fire TV Stick found it effectively undiscoverable in practice. Astra-tv (the same
+lineage `ShakaPlayer.ts` was ported from - see the playback-stopping fix above) instead opens
+its own settings panel from the `menu`/`context_menu` `HWEvent` types, the "≡" MENU control most
+Fire TV remotes have; `PlaybackScreens.tsx`'s `handleTVEvent` now does the same, toggling
+`pickerOpen` on `menu`/`context_menu` (only when `hasSelectableTracks` - more than one audio
+track, or any subtitles - matches exactly what the removed icon's own visibility condition used
+to gate on). The top-bar icon is gone entirely, not just relocated - `player.audio`/
+`player.subtitles` are still reachable, just remote-only now, matching how the rest of this
+screen's controls (play/pause, FF/RW, seek) already work.
+
+- **`back` now closes the picker first**, a real gap fixed alongside rather than a pre-existing
+  bug this change merely inherited: before, `handleTVEvent`'s `back` case never checked
+  `pickerOpen` at all, so pressing back while the picker was open exited playback outright
+  instead of dismissing it - the picker's own in-panel "Close" `Pressable` was the only way out.
+  `pickerOpen` is now the first-checked, highest-priority case in the same "dismiss whichever
+  overlay is on top" chain `back` already used for Next Up/skip-segment, ahead of both.
+- **Correction, found immediately after the above shipped**: arrowing through the picker's own
+  rows also seeked the video underneath it. Root cause - the picker's rows never claimed native
+  TV focus, so `handleTVEvent`'s global key handling kept receiving (and acting on) every key,
+  D-pad included, exactly as it does with the picker closed. Two-part fix: (1) a guard at the
+  top of `handleTVEvent` - `if (pickerOpen && type !== 'back' && type !== 'menu' && type !==
+  'context_menu') return;` - stops every other key (seek, seek-hold, play/pause) from reaching
+  the underlying player while the picker is open, the same "modal owns input, nothing else does"
+  pattern astra-tv's own equivalent handler uses; (2) `PickerRow` now takes
+  `hasTVPreferredFocus`, given to the first rendered row (first audio track if there is one,
+  otherwise the subtitle section's own "Off" row) so there's actually something for the D-pad to
+  land on the instant the picker opens.
+- **Also widened to a full-width, two-column (audio | subtitles side by side) dimmed-backdrop
+  modal** - matches the same treatment Live TV's `ProgramInfoOverlay` uses, both requested after
+  the original small top-right box read as an easy-to-miss corner popup rather than a proper
+  "you're in the settings now" screen.
+- **`openPicker`/`closePicker` now also pause/resume playback around the picker** - opening it
+  pauses if the video wasn't already paused (`pausedByPickerRef` remembers whether *this* pause
+  was the picker's doing); closing it - via back, the in-panel Close button, or menu toggling it
+  shut again - only resumes if that flag is set, so it can never fight a pause the user made
+  deliberately before ever opening the picker. Selecting a track skips this entirely and just
+  clears the flag: `selectTrack` reloads the source from the current position, and that reload
+  already resumes playback on its own.
+- **Correction, found right after the above shipped**: picking a different audio track didn't
+  actually change what played - it stayed on the original track every time.
+  - **First diagnosis, plausible but wrong**: `console.log`-ing `negotiatePlayback`'s own
+    returned URL showed the server's `TranscodingUrl` coming back with the *previous* session's
+    `AudioStreamIndex` still baked in, which looked exactly like AmbientFlare/astra-tv's own
+    documented reasoning for their `reloadWithTrack` explicitly reporting a replaced session
+    stopped (and awaiting it) before requesting a new one - "the end of one playback session and
+    the beginning of another," to stop the server from reusing an already-active transcode job.
+    Ported the same fix in. **Confirmed wrong by testing again**: the exact same wrong-index
+    symptom still happened even with the old session properly, verifiably stopped first (a fresh
+    `PlaySessionId` each time, `reportPlaybackStopped` awaited and resolved OK) - so whatever was
+    happening had nothing to do with session reuse at all.
+  - **Actual root cause, found by curling the Jellyfin server directly** (bypassing this app
+    entirely, the same technique that found the Live TV `openLiveStream` bug above):
+    `getMediaInfoApi().getPostedPlaybackInfo()`'s generated TypeScript signature exposes
+    `audioStreamIndex`/`subtitleStreamIndex`/`mediaSourceId` as their own top-level request
+    params, *separate* from the `playbackInfoDto` request body - and it's specifically those top-
+    level params the server reads for this, not the DTO's own same-named fields. `negotiatePlayback`
+    had only ever set the DTO fields. Confirmed by raw `curl` against the real server: a request
+    with only the DTO field set silently fell back to the item's *default* audio track every
+    time; adding `audioStreamIndex` as a top-level param without also adding `mediaSourceId`
+    still silently fell back; only setting *both* top-level params together actually worked. The
+    identical bug affected subtitle selection too, confirmed the same way. **Fix**:
+    `negotiatePlayback` now passes `audioStreamIndex`/`subtitleStreamIndex`/`mediaSourceId` as
+    top-level params (keeping the DTO fields set too, since that's what the one working `curl`
+    request had). `mediaSourceId` comes from the *current* source, since it's a property of the
+    file being played, not of which streams are selected, so it stays valid across a track
+    switch - the very first negotiation for an item has no prior source to draw it from and
+    leaves it unset, which is fine, since there's nothing to switch away from yet. The earlier
+    (wrong-theory) `reportPlaybackStopped`-before-switching call was removed again - not needed,
+    and it cost a real ~2s delay per switch waiting for that report to resolve. **What was kept
+    from that detour**: resetting `startedRef` and clearing the old progress-report interval
+    before calling `load()` for the switch, so `load()`'s own existing `!startedRef.current`
+    branch reports a proper `playbackStart` for the new session's own `PlaySessionId` - unrelated
+    to the audio bug itself, but a real gap on its own (skipping it risked later
+    `playbackProgress`/`playbackStopped` calls against a `PlaySessionId` the server was never
+    told had started).
+  - **Regression-tested**: the original `passes audioStreamIndex/subtitleStreamIndex through to
+    the request` test only ever asserted the DTO body fields - it would have (and did) pass while
+    this exact bug shipped. Now also asserts the top-level params, plus dedicated coverage for
+    `mediaSourceId` being passed through/omitted correctly.
+
 ### Live TV guide (`LiveTvGuideScreen.tsx`, `LiveTvPlayerScreen.tsx`, `liveTv.ts`)
 
 Phase 3's first slice, deliberately scoped down from the Roadmap's full "Live TV guide + DVR" -
@@ -722,6 +807,60 @@ affected a `Text` node and `Icon.tsx` wraps its glyph in a plain `View`.
   assumed correct — if one looks visibly wrong, that's the likely culprit, not a rendering bug
   in `Icon.tsx` itself.
 
+### Playback stopping outright on real Fire TV hardware, not reproduced on the Virtual Device
+
+**Reported after real-hardware testing (v0.3.0 sideloaded on a physical Fire TV Stick)** - video
+playback would stop, often, with nothing equivalent seen across this project's own Virtual
+Device testing. Since this app has no way to reproduce the symptom itself, the fix came from
+research rather than on-device diagnosis this time: AmbientFlare/astra-tv, a separate
+Jellyfin-for-Vega client this project's own vendored Shaka wrapper was originally ported from
+(confirmed by a leftover `"[Astra]"`-tagged log line still in `ShakaPlayer.ts`'s
+`getDebugStats`), documented the *identical* symptom class in its own changelog and crash
+investigation docs, then fixed it across a couple of releases. Two of their fixes were ported
+in:
+
+- **Native logging blocking the JS thread during media operations (their v1.2.0, "playback
+  repair").** `console.log`/`.info`/`.warn` all call `global.nativeLoggingHook` *synchronously*,
+  on the same JS thread as everything else - and this app's own vendored Shaka/w3cmedia code
+  logs on essentially every state transition and segment append. astra-tv's root cause: on real
+  Vega OS 1.2 hardware, that native logging call itself can block long enough to look like an
+  ANR - which is exactly what "resuming a title," "switching audio tracks," and "turning on
+  subtitles" turning into an exit-to-Home in their own report look like from the JS side.
+  Patched via `patch-package` (`patches/@react-native+js-polyfills+*.patch`,
+  `node_modules/@react-native/js-polyfills/console.js`): in `__DEV__`, `console.*` is completely
+  unchanged, so `vega device start-log-stream`-based debugging still works exactly as it always
+  has; in release builds - what real users actually run - `log`/`info`/`warn` go into a bounded
+  in-memory ring buffer (`global.__vegafinReleaseLogBuffer`, capped at 200 entries) instead of
+  paying for a native call every time, while `console.error` still always goes straight through
+  in both modes, since it's the rare, high-value case worth its own synchronous cost. If
+  `@react-native/js-polyfills` is ever upgraded, this patch needs re-diffing the same way the
+  `@jellyfin/sdk` one does (see that section above) - the mechanism has been tuned very little
+  version to version historically, but check.
+- **Unserialized Shaka `SourceBuffer` operations racing seeks/teardown (their v1.1.1).** New
+  `w3cmedia/bufferOperationTracker.ts` (also ported from astra-tv, same lineage) instruments
+  every `SourceBuffer`'s `appendBuffer`/`remove`/`abort` - via a monkey-patched
+  `MediaSource.prototype.addSourceBuffer`, installed fresh per load in `ShakaPlayer.ts` - to
+  track each operation's real completion via its own `updateend`/`abort`/`error` events, without
+  deferring the call itself (SourceBuffer methods must stay synchronous so `updating` flips
+  before returning to Shaka - queueing the call itself, not just tracking it, breaks that
+  contract and makes Shaka over-fetch while a JS-side queue drains). `ShakaPlayer.load()`/
+  `.unload()` are now both routed through a serialized `lifecycleQueue` (so load and unload can
+  never overlap each other) and both wait for `waitForAppendComplete()` before touching the
+  pipeline - without this, `unload()` could tear down (or a seek could reposition) the native
+  pipeline while a still-in-flight `appendBuffer` the native side hadn't finished processing was
+  racing it, exactly the kind of native/JS race that's invisible in JS-only testing.
+- **Not ported (yet)**: astra-tv's changelog also mentions HEVC/MPEG-TS needing
+  `sequenceMode: true` (vs. this app's hardcoded `false`, tuned for VOD's H.264/fMP4 transcoded
+  output) and switching HEVC/MPEG-TS audio from AAC to AC3 to fix long-run A/V drift. Neither
+  was ported since neither has been confirmed as this app's own actual problem yet - if playback
+  instability specifically correlates with HEVC source content after the two fixes above, that's
+  the next place to look, not a speculative change made without evidence.
+
+**Still needs real-hardware confirmation** - this project's Virtual Device never reproduced the
+bug being fixed, so on-device verification here specifically means the *user's own Fire TV
+Stick*, not `vega device install-app` against the Virtual Device. A Virtual Device rebuild only
+confirms nothing else broke, not that this is actually fixed.
+
 ## Architecture map
 
 | Concern | Kotlin source | This repo |
@@ -1093,6 +1232,13 @@ of several.
   that explicitly re-resolves `sort` from the new library's persisted value (or the default) any
   time the key changes - the same kind of reset-on-identity-change `LibraryGrid`'s `key` prop
   already handled, just for state that lives one level up where a `key` prop can't reach it.
+- **Correction, reported after real use**: the toolbar's own sort button and grid/list toggle
+  button never showed which one had focus at all - unlike literally every other focusable
+  element in this app, both were plain `<Pressable style={styles.toolbarButton}>`, never using
+  the `({ focused }) => ...` render-prop form the focus-visibility convention elsewhere depends
+  on to vary color by state. Fixed to match that convention exactly: `colors.primaryContainer`
+  fill (`colors.onPrimaryContainer` text/icon) when focused, same as every other outline/plain
+  button in the app, `colors.border`'s own outline left unchanged either way.
 
 ### Library grids need an explicit item-type filter, or stray Folder items leak in
 
@@ -1917,16 +2063,19 @@ src/
     setup/                     ServerList/UserList ("Select User" avatar tiles + password/Quick
                                Connect sign-in)/PinEntry - reused post-auth too as the side
                                nav's switch-user flow, see Switching servers/users above
-  w3cmedia/                   Vendored Shaka Player + DOM/URL/fetch polyfills - see the playback
-                               correction above. Excluded from lint (.eslintrc ignorePatterns).
-  types/                      Ambient .d.ts augmentations (react-native-kepler/vector-icons gaps,
+  w3cmedia/                   Vendored Shaka Player + DOM/URL/fetch polyfills, bufferOperationTracker.ts
+                               (SourceBuffer append/remove/abort tracking - see the real-hardware
+                               playback-stopping fix above). Excluded from lint (.eslintrc
+                               ignorePatterns).
+  types/                      Ambient .d.ts augmentations (react-native-kepler gaps,
                                ScrollView/FlatList's focusItemAlignment - see Focus system above;
                                I18nManager's getSystemLocale/addEventListener - see
                                Internationalization above)
 assets/image/icon.png          512x512 app icon - see the app-icon note above
-assets/raw/fonts/MaterialIcons.ttf  Icon font asset - see the icon-fonts note above
 patches/                       patch-package diffs, applied via package.json's postinstall -
-                                see the URL/URLSearchParams gotcha above for what and why
+                                @jellyfin+sdk (see the URL/URLSearchParams gotcha above) and
+                                @react-native+js-polyfills (see the real-hardware playback-
+                                stopping fix above)
 index.js                       AppRegistry entry point (must be .js - see build note above)
 app.json                       App name; must match manifest.toml's main component id
 manifest.toml                  Vega app manifest ([needs.module] is autolinked, not hand-written;

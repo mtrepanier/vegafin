@@ -86,6 +86,14 @@ export interface PlaybackSource {
 export interface NegotiatePlaybackOptions {
   audioStreamIndex?: number;
   subtitleStreamIndex?: number;
+  /** The MediaSource being negotiated against - required, alongside passing
+   * `audioStreamIndex`/`subtitleStreamIndex` as top-level request params (see the comment below
+   * on why), for the server to actually honor a track switch. `PlaybackSource.mediaSourceId`
+   * from a prior negotiation stays valid across a track switch (it's a property of the file, not
+   * of which streams got selected), so callers switching tracks always have one to pass; the
+   * very first negotiation for an item has no prior source to draw it from and leaves it unset,
+   * which is fine - there's nothing to switch away from yet. */
+  mediaSourceId?: string;
   positionMs?: number;
   /** Live TV channels (`liveTv.ts`) pass this - the reason VOD forces transcode-only below is
    * specifically about *seeking* into a direct-played raw file, which doesn't apply to a live
@@ -111,9 +119,27 @@ export async function negotiatePlayback(
   options: NegotiatePlaybackOptions = {},
 ): Promise<PlaybackSource> {
   const api = jellyfinClient.api;
+  // `audioStreamIndex`/`subtitleStreamIndex`/`mediaSourceId` are passed twice on purpose - once
+  // as top-level request params below, once inside `playbackInfoDto` above (still set, for
+  // whatever else reads it server-side). Confirmed on-device as a real bug, then confirmed
+  // directly against the server with plain curl, bypassing this app entirely: setting only the
+  // DTO's own `AudioStreamIndex`/`SubtitleStreamIndex` field (what this call used to do) gets
+  // silently ignored - the server falls back to the item's *default* track regardless of what
+  // was requested, every time. It's specifically the top-level `audioStreamIndex`/
+  // `subtitleStreamIndex` *request params* (what `getPostedPlaybackInfo`'s own generated
+  // TypeScript signature separately exposes them as, distinct from `playbackInfoDto`) that the
+  // server actually reads for this - and even then, only when `mediaSourceId` is also present;
+  // without it, the same silent fallback-to-default happens even with the correct
+  // audioStreamIndex/subtitleStreamIndex param set. This is why track switching
+  // (`PlaybackScreens.tsx`'s `selectTrack`) always has a `mediaSourceId` to pass: it's a
+  // property of the file being played, not of which streams are currently selected, so the
+  // *previous* negotiation's own `mediaSourceId` stays valid across the switch.
   const { data } = await getMediaInfoApi(api).getPostedPlaybackInfo({
     itemId,
     userId,
+    audioStreamIndex: options.audioStreamIndex,
+    subtitleStreamIndex: options.subtitleStreamIndex,
+    mediaSourceId: options.mediaSourceId,
     playbackInfoDto: {
       UserId: userId,
       DeviceProfile: DEVICE_PROFILE,
