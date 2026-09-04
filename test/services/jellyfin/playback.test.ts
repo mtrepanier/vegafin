@@ -277,10 +277,34 @@ describe('negotiatePlayback', () => {
 
     await negotiatePlayback('user-1', 'item-1', { audioStreamIndex: 2, subtitleStreamIndex: 5 });
     const call = mockGetPostedPlaybackInfo.mock.calls[0][0];
+    // Both the DTO body fields AND the call's own top-level audioStreamIndex/subtitleStreamIndex
+    // params - confirmed on-device (then confirmed directly against the server with plain curl)
+    // that the server only honors the top-level request params for this, silently falling back
+    // to the item's default track otherwise even with the DTO fields correctly set. A test that
+    // only checked the DTO fields (this test's own original version) would have passed while
+    // this exact bug shipped - see negotiatePlayback's own comment on why both are set.
     expect(call.playbackInfoDto.AudioStreamIndex).toBe(2);
     expect(call.playbackInfoDto.SubtitleStreamIndex).toBe(5);
+    expect(call.audioStreamIndex).toBe(2);
+    expect(call.subtitleStreamIndex).toBe(5);
     expect(call.itemId).toBe('item-1');
     expect(call.userId).toBe('user-1');
+  });
+
+  it('passes mediaSourceId through as a top-level request param, required alongside audioStreamIndex/subtitleStreamIndex for the server to actually honor a track switch', async () => {
+    mockGetPostedPlaybackInfo.mockResolvedValue({ data: { MediaSources: [{ Id: 's', TranscodingUrl: '/x' }] } });
+
+    await negotiatePlayback('user-1', 'item-1', { audioStreamIndex: 2, mediaSourceId: 'src-abc' });
+    const call = mockGetPostedPlaybackInfo.mock.calls[0][0];
+    expect(call.mediaSourceId).toBe('src-abc');
+  });
+
+  it('omits mediaSourceId when not given, e.g. the first negotiation for an item with nothing to switch away from', async () => {
+    mockGetPostedPlaybackInfo.mockResolvedValue({ data: { MediaSources: [{ Id: 's', TranscodingUrl: '/x' }] } });
+
+    await negotiatePlayback('user-1', 'item-1', {});
+    const call = mockGetPostedPlaybackInfo.mock.calls[0][0];
+    expect(call.mediaSourceId).toBeUndefined();
   });
 });
 
